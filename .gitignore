@@ -1,12 +1,22 @@
-# macOS
+# macOS / Windows
 .DS_Store
 ._*
+Thumbs.db
+Desktop.ini
 
-# 临时文件
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+
+# Temporary files
 *.tmp
+*.temp
 *.log
 
-# 输出文件（用户生成）
+# Generated output files
 output.md
 article.md
 *.html
