@@ -2,7 +2,7 @@
   "skills": [
     {
       "name": "smart-web-fetch",
-      "description": "Smart web content fetcher that retrieves URLs as clean Markdown using Jina Reader, markdown.new, defuddle.md, and a basic curl fallback. Use when an agent needs to read a web page, convert HTML to Markdown, reduce token usage, or fetch article-like content from a URL.",
+      "description": "Smart web content fetcher that retrieves URLs as clean Markdown using Jina Reader, markdown.new, defuddle.md, and a basic fallback path. Use when an agent needs to read a web page, fetch a URL, convert HTML to Markdown, reduce token usage, or extract article-like content from a URL.",
       "command": "smart-web-fetch",
       "triggers": [
         "fetch webpage",
@@ -10,16 +10,15 @@
         "fetch url",
         "read webpage",
         "read web page",
+        "read url",
+        "get webpage content",
+        "get url content",
+        "extract webpage text",
+        "extract article content",
         "convert webpage to markdown",
-        "????",
-        "??????",
-        "??????",
-        "????",
-        "???Markdown",
-        "??? markdown",
-        "?????Markdown",
-        "??URL??",
-        "??URL??"
+        "convert url to markdown",
+        "turn webpage into markdown",
+        "turn url into markdown"
       ],
       "examples": [
         {
@@ -27,11 +26,11 @@
           "command": "smart-web-fetch https://example.com"
         },
         {
-          "request": "?? https://example.com ?????",
+          "request": "Read https://example.com and extract the main article text",
           "command": "smart-web-fetch https://example.com"
         },
         {
-          "request": "? Windows PowerShell ??? https://example.com ?????",
+          "request": "Use Windows PowerShell to fetch https://example.com as clean Markdown",
           "command": "pwsh -File ./smart-web-fetch.ps1 https://example.com"
         }
       ]
@@ -41,7 +40,7 @@
     "user-prompt-submit": {
       "commands": [
         {
-          "command": "if echo '{{INPUT}}' | grep -qE '((fetch|read|grab)|(??|??|??)).*https?://'; then URL=$(echo '{{INPUT}}' | grep -oE 'https?://[^ ]+' | head -1); echo 'Detected a web-fetch request; try: smart-web-fetch \\\"'$URL'\\\"'; fi",
+          "command": "if echo '{{INPUT}}' | grep -qiE '((fetch|read|grab|get|extract|convert).*(web ?page|url|article|markdown)|(web ?page|url|article).*(fetch|read|grab|get|extract|convert)).*https?://'; then URL=$(echo '{{INPUT}}' | grep -oE 'https?://[^ ]+' | head -1); echo 'Detected a web-fetch request; try: smart-web-fetch \\\"'$URL'\\\"'; fi",
           "description": "Suggest smart-web-fetch when a prompt includes a URL fetch request"
         }
       ]

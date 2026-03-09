@@ -17,6 +17,7 @@ $TimeoutSec = 30
 $JinaReader = 'https://r.jina.ai/http://'
 $MarkdownNew = 'https://api.markdown.new/api/v1/convert'
 $DefuddleMd = 'https://defuddle.md/api/convert'
+$script:LastFetchError = $null
 
 function Show-Help {
     @"
@@ -26,7 +27,7 @@ Usage:
     smart-web-fetch.ps1 <URL> [options]
 
 Options:
-    -Help               Show help
+    -Help, -h, --help   Show help
     -Output <FILE>      Write output to file
     -Service <NAME>     Force service: jina|markdown|defuddle
     -VerboseMode        Show verbose logs
@@ -60,6 +61,52 @@ function Write-WarnLog([string]$Message) {
 
 function Write-ErrorLog([string]$Message) {
     [Console]::Error.WriteLine("[ERROR] $Message")
+}
+
+function Set-LastFetchError([string]$Message) {
+    $script:LastFetchError = $Message
+}
+
+function Get-RequestFailureSummary([System.Management.Automation.ErrorRecord]$ErrorRecord) {
+    if (-not $ErrorRecord) {
+        return 'Unknown request failure'
+    }
+
+    $exception = $ErrorRecord.Exception
+    $parts = @()
+
+    if ($null -ne $exception.Response) {
+        try {
+            $statusCode = [int]$exception.Response.StatusCode
+            if ($statusCode) {
+                $parts += "HTTP $statusCode"
+            }
+        } catch {
+        }
+
+        try {
+            $reasonPhrase = $exception.Response.ReasonPhrase
+            if (-not [string]::IsNullOrWhiteSpace($reasonPhrase)) {
+                $parts += $reasonPhrase.Trim()
+            }
+        } catch {
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($exception.Message)) {
+        $parts += $exception.Message.Trim()
+    }
+
+    if ($exception.InnerException -and -not [string]::IsNullOrWhiteSpace($exception.InnerException.Message)) {
+        $parts += $exception.InnerException.Message.Trim()
+    }
+
+    $summary = ($parts | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique) -join ' - '
+    if ([string]::IsNullOrWhiteSpace($summary)) {
+        return 'Unknown request failure'
+    }
+
+    return $summary
 }
 
 function Ensure-Url([string]$Value) {
@@ -107,7 +154,53 @@ function Test-InvalidContent([string]$Content) {
     return $false
 }
 
+function Get-OptionalCommand([string]$Name) {
+    return Get-Command $Name -ErrorAction SilentlyContinue
+}
+
+function Try-ExtractMarkdownWithJq([string]$Response) {
+    $jq = Get-OptionalCommand 'jq'
+    if (-not $jq) {
+        return $null
+    }
+
+    try {
+        $markdown = ($Response | & $jq.Source -r '.markdown // .content // .data // empty' 2>$null | Out-String).TrimEnd()
+        if (-not [string]::IsNullOrWhiteSpace($markdown) -and $markdown -ne 'null') {
+            Write-Info 'Using jq for markdown.new JSON extraction'
+            return $markdown
+        }
+    } catch {
+        Write-WarnLog 'jq extraction failed; falling back to ConvertFrom-Json'
+    }
+
+    return $null
+}
+
+function Try-CleanHtmlWithPerl([string]$Html) {
+    $perl = Get-OptionalCommand 'perl'
+    if (-not $perl) {
+        return $null
+    }
+
+    $perlScript = 's{<script\b[^>]*>.*?</script>}{}gsi; s{<style\b[^>]*>.*?</style>}{}gsi; s{<noscript\b[^>]*>.*?</noscript>}{}gsi; s{<nav\b[^>]*>.*?</nav>}{}gsi; s{<header\b[^>]*>.*?</header>}{}gsi; s{<footer\b[^>]*>.*?</footer>}{}gsi; s{<aside\b[^>]*>.*?</aside>}{}gsi; s{<!--.*?-->}{}gsi; s{\s(?:class|id|style|on\w+)=("[^"]*"|''[^'']*'')}{}gsi;'
+
+    try {
+        $cleaned = ($Html | & $perl.Source -0pe $perlScript 2>$null | Out-String).TrimEnd()
+        Write-Info 'Using perl for HTML cleanup'
+        return $cleaned
+    } catch {
+        Write-WarnLog 'perl HTML cleanup failed; falling back to PowerShell regex cleanup'
+        return $null
+    }
+}
+
 function Clean-Html([string]$Html) {
+    $perlCleaned = Try-CleanHtmlWithPerl $Html
+    if ($null -ne $perlCleaned) {
+        return $perlCleaned
+    }
+
     $cleaned = $Html
     $patterns = @(
         '(?is)<script\b[^>]*>.*?</script>',
@@ -150,23 +243,27 @@ function Convert-HtmlFallback([string]$Html) {
 
 function Fetch-Jina([string]$TargetUrl) {
     Write-Info 'Trying Jina Reader'
+    Set-LastFetchError $null
     try {
         $response = Invoke-Request -RequestUrl "$JinaReader$TargetUrl" -Headers @{ 'User-Agent' = 'SmartWebFetch/1.0' }
         if ((Test-InvalidContent $response) -or $response.Length -lt 100) {
-            Write-WarnLog 'Jina Reader returned invalid content'
+            Set-LastFetchError 'Jina Reader returned invalid or incomplete content'
+            Write-WarnLog $script:LastFetchError
             return $null
         }
 
         Write-Success 'Jina Reader succeeded'
         return $response
     } catch {
-        Write-WarnLog 'Jina Reader request failed'
+        Set-LastFetchError "Jina Reader request failed: $(Get-RequestFailureSummary $_)"
+        Write-WarnLog $script:LastFetchError
         return $null
     }
 }
 
 function Fetch-MarkdownNew([string]$TargetUrl) {
     Write-Info 'Trying markdown.new'
+    Set-LastFetchError $null
     try {
         $body = @{ url = $TargetUrl } | ConvertTo-Json -Compress
         $response = Invoke-Request -RequestUrl $MarkdownNew -Method 'POST' -Headers @{
@@ -175,8 +272,15 @@ function Fetch-MarkdownNew([string]$TargetUrl) {
         } -Body $body
 
         if (Test-InvalidContent $response) {
-            Write-WarnLog 'markdown.new returned invalid content'
+            Set-LastFetchError 'markdown.new returned invalid content'
+            Write-WarnLog $script:LastFetchError
             return $null
+        }
+
+        $markdown = Try-ExtractMarkdownWithJq $response
+        if (-not [string]::IsNullOrWhiteSpace($markdown)) {
+            Write-Success 'markdown.new succeeded'
+            return [string]$markdown
         }
 
         try {
@@ -194,13 +298,15 @@ function Fetch-MarkdownNew([string]$TargetUrl) {
         Write-Success 'markdown.new succeeded'
         return $response
     } catch {
-        Write-WarnLog 'markdown.new request failed'
+        Set-LastFetchError "markdown.new request failed: $(Get-RequestFailureSummary $_)"
+        Write-WarnLog $script:LastFetchError
         return $null
     }
 }
 
 function Fetch-Defuddle([string]$TargetUrl) {
     Write-Info 'Trying defuddle.md'
+    Set-LastFetchError $null
     try {
         $body = @{ url = $TargetUrl } | ConvertTo-Json -Compress
         $response = Invoke-Request -RequestUrl $DefuddleMd -Method 'POST' -Headers @{
@@ -209,20 +315,23 @@ function Fetch-Defuddle([string]$TargetUrl) {
         } -Body $body
 
         if (Test-InvalidContent $response) {
-            Write-WarnLog 'defuddle.md returned invalid content'
+            Set-LastFetchError 'defuddle.md returned invalid content'
+            Write-WarnLog $script:LastFetchError
             return $null
         }
 
         Write-Success 'defuddle.md succeeded'
         return $response
     } catch {
-        Write-WarnLog 'defuddle.md request failed'
+        Set-LastFetchError "defuddle.md request failed: $(Get-RequestFailureSummary $_)"
+        Write-WarnLog $script:LastFetchError
         return $null
     }
 }
 
 function Fetch-Basic([string]$TargetUrl) {
     Write-Info 'Trying basic fallback'
+    Set-LastFetchError $null
     try {
         $response = Invoke-Request -RequestUrl $TargetUrl -Headers @{
             'User-Agent' = 'Mozilla/5.0'
@@ -238,7 +347,8 @@ function Fetch-Basic([string]$TargetUrl) {
         Write-Success 'Basic fallback succeeded'
         return $result
     } catch {
-        Write-WarnLog 'Basic fallback failed'
+        Set-LastFetchError "Basic fallback failed: $(Get-RequestFailureSummary $_)"
+        Write-WarnLog $script:LastFetchError
         return $null
     }
 }
@@ -262,6 +372,11 @@ function Smart-Fetch([string]$TargetUrl, [string]$ForcedService) {
                 if ($result) { return $result }
             }
         }
+
+        if ($script:LastFetchError) {
+            throw "Forced service failed: $ForcedService. $script:LastFetchError"
+        }
+
         throw "Forced service failed: $ForcedService"
     }
 
@@ -275,6 +390,10 @@ function Smart-Fetch([string]$TargetUrl, [string]$ForcedService) {
         if ($result) {
             return $result
         }
+    }
+
+    if ($script:LastFetchError) {
+        throw "All fetch methods failed. Last error: $script:LastFetchError"
     }
 
     throw 'All fetch methods failed'

@@ -25,7 +25,7 @@ pwsh -File .\smart-web-fetch.ps1 https://example.com
 ./smart-web-fetch.ps1 https://example.com -Output article.md
 ```
 
-## 指定服务
+## 指定 Provider
 
 ```bash
 ./smart-web-fetch https://example.com -s jina
@@ -49,7 +49,7 @@ pwsh -File .\smart-web-fetch.ps1 https://example.com
 ./smart-web-fetch.ps1 https://example.com -VerboseMode
 ```
 
-## 跳过 fallback HTML 清洗
+## 跳过基础 fallback 的 HTML 清洗
 
 ```bash
 ./smart-web-fetch https://example.com --no-clean
@@ -58,6 +58,11 @@ pwsh -File .\smart-web-fetch.ps1 https://example.com
 ```powershell
 ./smart-web-fetch.ps1 https://example.com -NoClean
 ```
+
+## 平台说明
+
+- Bash / 类 Unix CLI：依赖 `curl`，`jq`、`html2text`、`lynx`、`perl` 都是可选辅助工具。
+- PowerShell CLI：依赖 PowerShell 7 和 `Invoke-WebRequest`，`jq`、`perl`、`html2text`、`lynx` 都是可选辅助工具。
 
 ## 推荐集成方式
 

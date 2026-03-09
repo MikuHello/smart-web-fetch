@@ -1,44 +1,57 @@
 # Smart Web Fetch - Agent Edition
 
-轻量级网页抓取 Skill / CLI，可供不同智能体系统复用。
+轻量级网页抓取 Skill / CLI，适合需要更干净、更易复用网页内容的智能体工作流。
 
-> 项目Fork自`Kim-Huang-JunKai/smart-web-fetch`  
-> **借鉴来源：** 本工具功能设计借鉴自 clawhub.ai/Leochens/smart-web-fetch，感谢原作者的创意和实现思路。
+> 项目 Fork 自 `Kim-Huang-JunKai/smart-web-fetch`  
+> **借鉴来源：** clawhub.ai/Leochens/smart-web-fetch，感谢原作者的创意和工作流设计。
 
-它会抓取指定 URL，并优先输出更干净的 Markdown 内容，默认按以下顺序自动降级：
+工具会抓取目标 URL，并优先输出更干净的 Markdown 内容，默认按以下顺序自动降级：
 
 1. `Jina Reader`
 2. `markdown.new`
 3. `defuddle.md`
-4. 直接 `curl` 抓取
+4. 直接 fallback 抓取
 
-项目刻意保持小而简单，方便在不同环境中复用：
+项目刻意保持小而简单，方便在不同智能体系统中复用：
 
 - `SKILL.md`：适用于 Codex 风格的 Skill 系统
 - `skill.json`：适用于 Claude 风格的 Skill 注册方式
-- `smart-web-fetch`：适用于普通智能体、脚本或自动化流程直接调用
+- `smart-web-fetch`：适用于 Bash / 类 Unix 环境中的通用智能体、脚本和自动化流程
 - `smart-web-fetch.ps1`：适用于 Windows / `pwsh 7` 的原生 PowerShell 用法
 
 ## 功能特性
 
-- 优先输出 Markdown，减少噪音与 Token 消耗
+- 优先输出 Markdown，减少 HTML 噪音和 Token 消耗
 - 内置多服务自动降级策略
-- 支持保存到文件
-- 支持详细日志输出
-- 基础 `curl` fallback 支持 HTML 清洗
+- 支持将抓取结果写入文件
+- 支持详细日志输出，方便排查问题
+- 基础 fallback 路径支持 HTML 清洗
+
+## 使用前提
+
+- 需要当前宿主环境提供可用的联网能力，例如搜索工具、网络访问权限，或可发起 HTTP 请求的命令行环境
+- 本 Skill 负责提供抓取流程和调用方式，实际能否联网取决于运行它的工具环境
 
 ## 依赖
 
+### Bash / 类 Unix CLI
+
 - `curl`：必需
 - `jq`：可选，用于从 JSON 响应中提取 Markdown 字段
-- `html2text` 或 `lynx`：可选，用于将 fallback 的 HTML 转为文本
-- `perl`：可选，用于在 fallback 模式下进行更完整的 HTML 清洗
+- `html2text` 或 `lynx`：可选，用于将 fallback HTML 转成纯文本
+- `perl`：可选，用于在 fallback 模式下进行更强的 HTML 清洗
 
-### 常见安装命令
+### PowerShell CLI
 
-以下命令只是为了方便安装，保留上面的依赖说明不变。
+- PowerShell 7 + `Invoke-WebRequest`：必需
+- `html2text` 或 `lynx`：可选，用于将 fallback HTML 转成纯文本
+- `jq`：可选，安装后会优先用于 `markdown.new` 的 JSON 字段提取
+- `perl`：可选，安装后会优先用于基础 fallback 的更强 HTML 清洗
+- 默认 PowerShell 流程不依赖 `curl`，未安装 `jq` / `perl` 时会回退到原生 PowerShell 解析与清洗逻辑
 
-#### macOS（Homebrew）
+### 常见安装示例
+
+#### macOS (Homebrew)
 
 ```bash
 brew install curl jq html2text lynx perl
@@ -63,16 +76,32 @@ sudo dnf install -y curl jq html2text lynx perl
 sudo pacman -S --needed curl jq html2text lynx perl
 ```
 
-#### Windows（PowerShell 7 + winget）
+#### Windows（PowerShell 版：PowerShell 7 + 可选辅助工具）
 
 ```powershell
+# winget install Microsoft.PowerShell
 winget install jqlang.jq
 winget install StrawberryPerl.StrawberryPerl
-winget install Python.Python.3
+# winget install Python.Python.3
 py -m pip install html2text
+winget install lynx.portable
 ```
 
-如果你只想先满足最低要求，安装 `curl` 即可；其余依赖都是增强项。
+如果你只使用 PowerShell 版 `smart-web-fetch.ps1`，核心要求是 PowerShell 7；`jq`、`perl`、`html2text`、`lynx` 都是可选增强项，其中 `jq` 和 `perl` 在安装后会优先参与与 Bash 版一致的解析和清洗流程。
+
+#### Windows（Bash 版：Git Bash / WSL / MSYS2 等环境）
+
+```powershell
+# winget install Microsoft.PowerShell
+# winget install Git.Git
+winget install jqlang.jq
+winget install StrawberryPerl.StrawberryPerl
+# winget install Python.Python.3
+py -m pip install html2text
+winget install lynx.portable
+```
+
+在 Windows 上运行 Bash 版 `smart-web-fetch` 时，至少需要可用的 `curl` 环境；`jq`、`perl`、`html2text`、`lynx` 都是推荐安装的增强项。若使用 WSL，也可以直接按 Linux 发行版方式安装这些依赖。
 
 ## 安装
 
@@ -82,7 +111,7 @@ py -m pip install html2text
 ./smart-web-fetch https://example.com
 ```
 
-### 方式二：加入 `PATH`
+### 方式二：将 Bash CLI 加入 `PATH`
 
 ```bash
 chmod +x smart-web-fetch
@@ -138,9 +167,9 @@ smart-web-fetch https://example.com -v
 | `-o`, `--output FILE` | 输出到文件 |
 | `-s`, `--service NAME` | 指定服务：`jina`、`markdown` 或 `defuddle` |
 | `-v`, `--verbose` | 显示详细日志 |
-| `--no-clean` | 跳过基础 `curl` fallback 的 HTML 清洗 |
+| `--no-clean` | 跳过基础 fallback 路径中的 HTML 清洗 |
 
-PowerShell 版本对应参数：`-Output`、`-Service`、`-VerboseMode`、`-NoClean`。
+PowerShell 对应参数：`-Output`、`-Service`、`-VerboseMode`、`-NoClean`。
 
 ## 默认服务顺序
 
@@ -149,13 +178,14 @@ PowerShell 版本对应参数：`-Output`、`-Service`、`-VerboseMode`、`-NoCl
 1. `jina`
 2. `markdown`
 3. `defuddle`
-4. 基础 `curl` fallback
+4. 基础 fallback
 
 ## 说明
 
-- `--no-clean` 只影响基础 fallback 路径，不影响外部清洗服务返回的内容。
-- 如果没有安装 `html2text` 或 `lynx`，fallback 会直接返回清洗后的原始 HTML。
-- 某些网站可能会拦截清洗服务，请求最终会回退到直接 `curl` 抓取。
+- `--no-clean` 只影响基础 fallback 路径，不会修改外部服务返回的内容。
+- 如果安装了 `jq` / `perl`，PowerShell 版会优先使用它们；未安装时会自动回退到原生 PowerShell 解析与清洗逻辑。
+- 如果没有安装 `html2text` 或 `lynx`，fallback 路径会返回清洗后的 HTML，而不是转换后的纯文本。
+- 某些网站可能会拦截第三方清洗服务，此时工具会回退到直接抓取路径。
 
 ## License
 

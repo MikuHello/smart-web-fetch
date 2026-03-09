@@ -5,11 +5,11 @@ description: Fetch web pages and article-like URLs as clean Markdown with automa
 
 # Smart Web Fetch
 
-Use the bundled CLI to retrieve a URL.
+Use the bundled CLI to retrieve a URL as clean Markdown or text.
 
 ## Run
 
-### Bash / ? Unix ??
+### Bash / Unix-like systems
 
 ```bash
 ./smart-web-fetch <URL>
@@ -41,13 +41,21 @@ The tool tries providers in this order unless a service is forced:
 1. `jina`
 2. `markdown`
 3. `defuddle`
-4. direct `curl` fallback
+4. direct fallback
 
 The clean-skip flag only changes the basic fallback path. External provider output is passed through unchanged.
 
 ## Requirements
 
+### Bash CLI
+
 - Require `curl`
 - Prefer `jq` for JSON parsing
 - Prefer `html2text` or `lynx` for fallback HTML conversion
 - Prefer `perl` for stronger fallback HTML cleanup when available
+
+### PowerShell CLI
+
+- Require PowerShell 7 with `Invoke-WebRequest`
+- Prefer `html2text` or `lynx` for fallback HTML conversion
+- Do not require `curl`, `jq`, or `perl` for the default PowerShell flow
