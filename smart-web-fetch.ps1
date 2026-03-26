@@ -17,6 +17,9 @@ $TimeoutSec = 30
 $JinaReaderBase = 'https://r.jina.ai'
 $MarkdownNew = 'https://api.markdown.new/api/v1/convert'
 $DefuddleMd = 'https://defuddle.md/api/convert'
+$JinaMinLength = 100
+$MarkdownNewMinLength = 40
+$DefuddleMinLength = 40
 $script:LastFetchError = $null
 
 function Show-Help {
@@ -157,13 +160,41 @@ function Invoke-Request([string]$RequestUrl, [string]$Method = 'GET', [hashtable
     return $response.Content
 }
 
-function Test-InvalidContent([string]$Content) {
+function Test-InvalidContent([string]$Content, [int]$MinLength = 1) {
+    # 判定策略：仅将空响应/过短响应和结构化错误字段视为失败，避免误伤正文中出现 "error" 字样的正常内容。
     if ([string]::IsNullOrWhiteSpace($Content)) {
         return $true
     }
 
-    if ($Content -match '(?i)error') {
+    if ($Content.Length -lt $MinLength) {
         return $true
+    }
+
+    try {
+        $json = $Content | ConvertFrom-Json -ErrorAction Stop
+        if ($null -ne $json) {
+            $errorField = $json.PSObject.Properties['error']
+            if ($null -ne $errorField) {
+                $errorValue = $errorField.Value
+                if ($errorValue -is [bool] -and $errorValue) {
+                    return $true
+                }
+
+                if ($errorValue -is [string] -and $errorValue -match '(?i)(error|fail|invalid|unauthorized|forbidden|not found)') {
+                    return $true
+                }
+            }
+
+            $messageField = $json.PSObject.Properties['message']
+            if ($null -ne $messageField) {
+                $messageValue = [string]$messageField.Value
+                if (-not [string]::IsNullOrWhiteSpace($messageValue) -and $messageValue -match '(?i)(error|fail|invalid|unauthorized|forbidden|not found)') {
+                    return $true
+                }
+            }
+        }
+    } catch {
+        # 非 JSON 内容不按错误处理；仅依赖空/长度兜底。
     }
 
     return $false
@@ -262,7 +293,7 @@ function Fetch-Jina([string]$TargetUrl) {
     try {
         $jinaRequestUrl = Get-JinaRequestUrl $TargetUrl
         $response = Invoke-Request -RequestUrl $jinaRequestUrl -Headers @{ 'User-Agent' = 'SmartWebFetch/1.0' }
-        if ((Test-InvalidContent $response) -or $response.Length -lt 100) {
+        if (Test-InvalidContent -Content $response -MinLength $JinaMinLength) {
             Set-LastFetchError 'Jina Reader returned invalid or incomplete content'
             Write-WarnLog $script:LastFetchError
             return $null
@@ -287,7 +318,7 @@ function Fetch-MarkdownNew([string]$TargetUrl) {
             'User-Agent'   = 'SmartWebFetch/1.0'
         } -Body $body
 
-        if (Test-InvalidContent $response) {
+        if (Test-InvalidContent -Content $response -MinLength $MarkdownNewMinLength) {
             Set-LastFetchError 'markdown.new returned invalid content'
             Write-WarnLog $script:LastFetchError
             return $null
@@ -330,7 +361,7 @@ function Fetch-Defuddle([string]$TargetUrl) {
             'User-Agent'   = 'SmartWebFetch/1.0'
         } -Body $body
 
-        if (Test-InvalidContent $response) {
+        if (Test-InvalidContent -Content $response -MinLength $DefuddleMinLength) {
             Set-LastFetchError 'defuddle.md returned invalid content'
             Write-WarnLog $script:LastFetchError
             return $null
