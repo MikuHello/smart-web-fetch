@@ -149,6 +149,10 @@ smart-web-fetch https://example.com -o output.md
 smart-web-fetch https://example.com -s jina
 smart-web-fetch https://example.com --no-clean
 smart-web-fetch https://example.com -v
+# 参数值不可省略：下面写法会报错并显示帮助
+smart-web-fetch https://example.com -o
+smart-web-fetch https://example.com -s
+smart-web-fetch https://example.com -s -v
 ```
 
 ```powershell

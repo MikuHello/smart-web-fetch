@@ -9,6 +9,9 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 TIMEOUT=30
+JINA_MIN_LENGTH=100
+MARKDOWN_NEW_MIN_LENGTH=40
+DEFUDDLE_MIN_LENGTH=40
 
 JINA_READER_BASE="https://r.jina.ai"
 MARKDOWN_NEW="https://api.markdown.new/api/v1/convert"
@@ -58,6 +61,38 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
+exit_with_help_error() {
+    log_error "$1"
+    show_help
+    exit 1
+}
+
+validate_option_value() {
+    local option_name="$1"
+    local option_value="$2"
+
+    if [[ -z "$option_value" ]]; then
+        exit_with_help_error "Missing value for ${option_name}"
+    fi
+
+    if [[ "$option_value" == -* ]]; then
+        exit_with_help_error "Invalid value for ${option_name}: ${option_value}"
+    fi
+}
+
+validate_service_value() {
+    local service_value="$1"
+
+    case "$service_value" in
+        jina|markdown|defuddle)
+            return 0
+            ;;
+        *)
+            exit_with_help_error "Invalid service: ${service_value}. Allowed values: jina|markdown|defuddle"
+            ;;
+    esac
+}
+
 build_jina_url() {
     local target_url="$1"
     local scheme="http"
@@ -69,6 +104,52 @@ build_jina_url() {
     fi
 
     printf '%s/%s://%s\n' "$JINA_READER_BASE" "$scheme" "$url_without_scheme"
+}
+
+is_structured_error_response() {
+    local response="$1"
+    local compact_response
+    local lowered_response
+
+    if command -v jq >/dev/null 2>&1; then
+        if printf '%s' "$response" | jq -e '
+            if type == "object" then
+                .error as $error
+                | .message as $message
+                | (
+                    ($error != null and (
+                        ($error | type == "boolean" and $error == true)
+                        or ($error | type == "string" and ($error | test("(?i)error|fail|invalid|unauthorized|forbidden|not found")))
+                    ))
+                    or
+                    ($message != null and ($message | type == "string" and ($message | test("(?i)error|fail|invalid|unauthorized|forbidden|not found"))))
+                )
+            else
+                false
+            end
+        ' >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+
+    # Fallback without jq: only treat JSON-looking payloads with explicit
+    # "error"/"message" keys and common failure semantics as structured errors.
+    compact_response=$(printf '%s' "$response" | tr -d '[:space:]')
+    if [[ ! "$compact_response" =~ ^[\{\[] ]]; then
+        return 1
+    fi
+
+    lowered_response=$(printf '%s' "$compact_response" | tr '[:upper:]' '[:lower:]')
+
+    if [[ "$lowered_response" =~ \"error\":true ]]; then
+        return 0
+    fi
+
+    if [[ "$lowered_response" =~ \"(error|message)\":\"[^\"]*(error|fail|invalid|unauthorized|forbidden|not[[:space:]_-]?found)[^\"]*\" ]]; then
+        return 0
+    fi
+
+    return 1
 }
 
 clean_html() {
@@ -135,21 +216,36 @@ json_escape_minimal() {
 fetch_jina() {
     local url="$1"
     local response
+    local http_code
 
     log_info "Trying Jina Reader"
 
     local jina_url
     jina_url=$(build_jina_url "$url")
 
+    # 判定策略：仅将 HTTP 非 2xx、结构化错误字段、空/过短响应视为失败，不再按全文关键词匹配。
     if ! response=$(curl -sL --max-time "$TIMEOUT" \
         -H "User-Agent: SmartWebFetch/1.0" \
+        -w $'\n%{http_code}' \
         "$jina_url" 2>&1); then
         log_warn "Jina Reader request failed"
         return 1
     fi
+    http_code="${response##*$'\n'}"
+    response="${response%$'\n'*}"
 
-    if [[ -z "$response" ]] || echo "$response" | grep -qi "error" || [[ ${#response} -lt 100 ]]; then
-        log_warn "Jina Reader returned invalid content"
+    if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+        log_warn "Jina Reader returned HTTP ${http_code:-unknown}"
+        return 1
+    fi
+
+    if is_structured_error_response "$response"; then
+        log_warn "Jina Reader returned structured error payload"
+        return 1
+    fi
+
+    if [[ -z "$response" ]] || [[ ${#response} -lt "$JINA_MIN_LENGTH" ]]; then
+        log_warn "Jina Reader returned empty or too-short content"
         return 1
     fi
 
@@ -160,24 +256,39 @@ fetch_jina() {
 fetch_markdown_new() {
     local url="$1"
     local response
+    local http_code
     local markdown=""
     local payload=""
 
     log_info "Trying markdown.new"
     payload=$(build_url_json_payload "$url")
 
+    # 判定策略：仅将 HTTP 非 2xx、结构化错误字段、空/过短响应视为失败，不再按全文关键词匹配。
     if ! response=$(curl -sL --max-time "$TIMEOUT" \
         -X POST \
         -H "Content-Type: application/json" \
         -H "User-Agent: SmartWebFetch/1.0" \
         -d "$payload" \
+        -w $'\n%{http_code}' \
         "$MARKDOWN_NEW" 2>&1); then
         log_warn "markdown.new request failed"
         return 1
     fi
+    http_code="${response##*$'\n'}"
+    response="${response%$'\n'*}"
 
-    if [[ -z "$response" ]] || echo "$response" | grep -qi "error"; then
-        log_warn "markdown.new returned invalid content"
+    if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+        log_warn "markdown.new returned HTTP ${http_code:-unknown}"
+        return 1
+    fi
+
+    if is_structured_error_response "$response"; then
+        log_warn "markdown.new returned structured error payload"
+        return 1
+    fi
+
+    if [[ -z "$response" ]] || [[ ${#response} -lt "$MARKDOWN_NEW_MIN_LENGTH" ]]; then
+        log_warn "markdown.new returned empty or too-short content"
         return 1
     fi
 
@@ -198,22 +309,37 @@ fetch_defuddle() {
     local url="$1"
     local response
     local payload=""
+    local http_code
 
     log_info "Trying defuddle.md"
     payload=$(build_url_json_payload "$url")
 
+    # 判定策略：仅将 HTTP 非 2xx、结构化错误字段、空/过短响应视为失败，不再按全文关键词匹配。
     if ! response=$(curl -sL --max-time "$TIMEOUT" \
         -X POST \
         -H "Content-Type: application/json" \
         -H "User-Agent: SmartWebFetch/1.0" \
         -d "$payload" \
+        -w $'\n%{http_code}' \
         "$DEFUDDLE_MD" 2>&1); then
         log_warn "defuddle.md request failed"
         return 1
     fi
+    http_code="${response##*$'\n'}"
+    response="${response%$'\n'*}"
 
-    if [[ -z "$response" ]] || echo "$response" | grep -qi "error"; then
-        log_warn "defuddle.md returned invalid content"
+    if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+        log_warn "defuddle.md returned HTTP ${http_code:-unknown}"
+        return 1
+    fi
+
+    if is_structured_error_response "$response"; then
+        log_warn "defuddle.md returned structured error payload"
+        return 1
+    fi
+
+    if [[ -z "$response" ]] || [[ ${#response} -lt "$DEFUDDLE_MIN_LENGTH" ]]; then
+        log_warn "defuddle.md returned empty or too-short content"
         return 1
     fi
 
@@ -282,8 +408,7 @@ smart_fetch() {
                 result=$(fetch_defuddle "$url") && { printf '%s\n' "$result"; return 0; }
                 ;;
             *)
-                log_error "Unknown service: $specified_service"
-                return 1
+                exit_with_help_error "Invalid service: ${specified_service}. Allowed values: jina|markdown|defuddle"
                 ;;
         esac
     fi
@@ -310,18 +435,13 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         -o|--output)
-            if [[ -z "$2" ]]; then
-                log_error "Missing value for $1"
-                exit 1
-            fi
+            validate_option_value "$1" "$2"
             OUTPUT="$2"
             shift 2
             ;;
         -s|--service)
-            if [[ -z "$2" ]]; then
-                log_error "Missing value for $1"
-                exit 1
-            fi
+            validate_option_value "$1" "$2"
+            validate_service_value "$2"
             SERVICE="$2"
             shift 2
             ;;
