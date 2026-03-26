@@ -14,7 +14,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $TimeoutSec = 30
-$JinaReader = 'https://r.jina.ai/http://'
+$JinaReaderBase = 'https://r.jina.ai'
 $MarkdownNew = 'https://api.markdown.new/api/v1/convert'
 $DefuddleMd = 'https://defuddle.md/api/convert'
 $script:LastFetchError = $null
@@ -120,6 +120,21 @@ function Ensure-Url([string]$Value) {
     }
 
     return $Value
+}
+
+function Get-JinaRequestUrl([string]$TargetUrl) {
+    $urlWithoutScheme = [regex]::Replace($TargetUrl, '^(?i)https?://', '')
+    $scheme = 'http'
+
+    try {
+        $uri = [Uri]$TargetUrl
+        if ($uri.Scheme -ieq 'https') {
+            $scheme = 'https'
+        }
+    } catch {
+    }
+
+    return "$JinaReaderBase/$scheme://$urlWithoutScheme"
 }
 
 function Invoke-Request([string]$RequestUrl, [string]$Method = 'GET', [hashtable]$Headers = $null, [string]$Body = $null) {
@@ -245,7 +260,8 @@ function Fetch-Jina([string]$TargetUrl) {
     Write-Info 'Trying Jina Reader'
     Set-LastFetchError $null
     try {
-        $response = Invoke-Request -RequestUrl "$JinaReader$TargetUrl" -Headers @{ 'User-Agent' = 'SmartWebFetch/1.0' }
+        $jinaRequestUrl = Get-JinaRequestUrl $TargetUrl
+        $response = Invoke-Request -RequestUrl $jinaRequestUrl -Headers @{ 'User-Agent' = 'SmartWebFetch/1.0' }
         if ((Test-InvalidContent $response) -or $response.Length -lt 100) {
             Set-LastFetchError 'Jina Reader returned invalid or incomplete content'
             Write-WarnLog $script:LastFetchError
