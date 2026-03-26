@@ -153,6 +153,8 @@ smart-web-fetch https://example.com -v
 smart-web-fetch https://example.com -o
 smart-web-fetch https://example.com -s
 smart-web-fetch https://example.com -s -v
+# 仅支持一个 URL：多 URL 输入会报错并显示帮助（不会取最后一个）
+smart-web-fetch https://example.com https://openai.com
 ```
 
 ```powershell
