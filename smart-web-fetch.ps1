@@ -69,6 +69,54 @@ function Write-ErrorLog([string]$Message) {
     [Console]::Error.WriteLine("[ERROR] $Message")
 }
 
+function Write-DependencyCheckError([string]$Message) {
+    Write-ErrorLog "[Dependency] $Message"
+}
+
+function Test-RuntimeDependencies {
+    $failures = New-Object System.Collections.Generic.List[string]
+
+    if (-not $PSVersionTable.PSVersion -or $PSVersionTable.PSVersion.Major -lt 7) {
+        $actual = if ($PSVersionTable.PSVersion) { $PSVersionTable.PSVersion.ToString() } else { 'Unknown' }
+        $failures.Add("Missing required runtime: PowerShell 7+ (current: $actual)")
+    }
+
+    $invokeWebRequestCmd = Get-Command Invoke-WebRequest -ErrorAction SilentlyContinue
+    if (-not $invokeWebRequestCmd) {
+        $failures.Add('Missing required command: Invoke-WebRequest')
+    }
+
+    $jq = Get-OptionalCommand 'jq'
+    if ($jq) {
+        Write-Info '[Dependency] Optional dependency detected: jq (JSON markdown extraction)'
+    } else {
+        Write-WarnLog '[Dependency] Optional dependency not found: jq (fallback to ConvertFrom-Json/native parsing)'
+    }
+
+    $perl = Get-OptionalCommand 'perl'
+    if ($perl) {
+        Write-Info '[Dependency] Optional dependency detected: perl (enhanced HTML cleanup)'
+    } else {
+        Write-WarnLog '[Dependency] Optional dependency not found: perl (fallback to PowerShell regex cleanup)'
+    }
+
+    $html2text = Get-OptionalCommand 'html2text'
+    $lynx = Get-OptionalCommand 'lynx'
+    if ($html2text -or $lynx) {
+        Write-Info '[Dependency] Optional dependency detected: html2text/lynx (HTML-to-text fallback)'
+    } else {
+        Write-WarnLog '[Dependency] Optional dependency not found: html2text or lynx (fallback returns cleaned HTML)'
+    }
+
+    if ($failures.Count -gt 0) {
+        foreach ($failure in $failures) {
+            Write-DependencyCheckError $failure
+        }
+
+        throw 'Dependency check failed. Please install required dependencies and retry.'
+    }
+}
+
 function Set-LastFetchError([string]$Message) {
     $script:LastFetchError = $Message
 }
@@ -476,6 +524,8 @@ try {
         Show-Help
         throw 'Please provide a URL'
     }
+
+    Test-RuntimeDependencies
 
     $content = Smart-Fetch -TargetUrl $Url -ForcedService $Service
 

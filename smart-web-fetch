@@ -61,6 +61,57 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
+log_dep_status() {
+    local level="$1"
+    local message="$2"
+
+    case "$level" in
+        required-ok|optional-ok)
+            log_info "[Dependency] $message"
+            ;;
+        optional-missing)
+            log_warn "[Dependency] $message"
+            ;;
+        required-missing)
+            log_error "[Dependency] $message"
+            ;;
+    esac
+}
+
+check_runtime_dependencies() {
+    local missing_required=0
+
+    if command -v curl >/dev/null 2>&1; then
+        log_dep_status "required-ok" "curl detected"
+    else
+        log_dep_status "required-missing" "Missing required dependency: curl"
+        missing_required=1
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+        log_dep_status "optional-ok" "Optional dependency detected: jq (JSON markdown extraction)"
+    else
+        log_dep_status "optional-missing" "Optional dependency not found: jq (fallback to raw/PowerShell JSON parsing)"
+    fi
+
+    if command -v perl >/dev/null 2>&1; then
+        log_dep_status "optional-ok" "Optional dependency detected: perl (enhanced HTML cleanup)"
+    else
+        log_dep_status "optional-missing" "Optional dependency not found: perl (fallback to basic sed cleanup)"
+    fi
+
+    if command -v html2text >/dev/null 2>&1 || command -v lynx >/dev/null 2>&1; then
+        log_dep_status "optional-ok" "Optional dependency detected: html2text/lynx (HTML-to-text fallback)"
+    else
+        log_dep_status "optional-missing" "Optional dependency not found: html2text or lynx (fallback returns cleaned HTML)"
+    fi
+
+    if [[ "$missing_required" -ne 0 ]]; then
+        log_error "Dependency check failed. Please install required dependencies and retry."
+        exit 1
+    fi
+}
+
 exit_with_help_error() {
     log_error "$1"
     show_help
@@ -478,6 +529,8 @@ if [[ -z "$URL" ]]; then
     show_help
     exit 1
 fi
+
+check_runtime_dependencies
 
 CONTENT=$(smart_fetch "$URL" "$SERVICE")
 
