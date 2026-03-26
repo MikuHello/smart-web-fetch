@@ -12,6 +12,7 @@ TIMEOUT=30
 JINA_MIN_LENGTH=100
 MARKDOWN_NEW_MIN_LENGTH=40
 DEFUDDLE_MIN_LENGTH=40
+BASIC_MIN_LENGTH=40
 
 JINA_READER_BASE="https://r.jina.ai"
 MARKDOWN_NEW="https://api.markdown.new/api/v1/convert"
@@ -203,6 +204,44 @@ is_structured_error_response() {
     return 1
 }
 
+extract_http_status_code() {
+    local headers_file="$1"
+    awk 'toupper($1) ~ /^HTTP\// { code=$2 } END { print code }' "$headers_file"
+}
+
+extract_content_type() {
+    local headers_file="$1"
+    awk -F': *' '
+        BEGIN { IGNORECASE=1 }
+        tolower($1) == "content-type" { ct=$2 }
+        END {
+            sub(/\r$/, "", ct)
+            print tolower(ct)
+        }
+    ' "$headers_file"
+}
+
+is_likely_html_error_payload() {
+    local response="$1"
+    local content_type="$2"
+    local lowered_response=""
+
+    if [[ "$content_type" != *"text/html"* ]] && [[ "$content_type" != *"application/xhtml+xml"* ]]; then
+        return 1
+    fi
+
+    lowered_response=$(printf '%s' "$response" | tr '[:upper:]' '[:lower:]')
+    if [[ "$lowered_response" != *"<html"* ]] && [[ "$lowered_response" != *"<title"* ]]; then
+        return 1
+    fi
+
+    if [[ "$lowered_response" =~ (access[[:space:]]denied|forbidden|captcha|cloudflare|just[[:space:]]a[[:space:]]moment|unauthorized|bad[[:space:]]gateway|gateway[[:space:]]timeout|service[[:space:]]unavailable) ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
 clean_html() {
     if command -v perl >/dev/null 2>&1; then
         perl -0pe 's{<script\b[^>]*>.*?</script>}{}gsi; s{<style\b[^>]*>.*?</style>}{}gsi; s{<noscript\b[^>]*>.*?</noscript>}{}gsi; s{<nav\b[^>]*>.*?</nav>}{}gsi; s{<header\b[^>]*>.*?</header>}{}gsi; s{<footer\b[^>]*>.*?</footer>}{}gsi; s{<aside\b[^>]*>.*?</aside>}{}gsi; s{<!--.*?-->}{}gsi; s{\s(?:class|id|style|on\w+)=("[^"]*"|'"'"'[^'"'"']*'"'"')}{}gsi;'
@@ -313,28 +352,43 @@ fetch_markdown_new() {
     local url="$1"
     local response
     local http_code
+    local content_type=""
     local markdown=""
     local payload=""
+    local headers_file=""
+    local body_file=""
 
     log_info "Trying markdown.new"
     payload=$(build_url_json_payload "$url")
+    headers_file=$(mktemp)
+    body_file=$(mktemp)
 
-    # 判定策略：仅将 HTTP 非 2xx、结构化错误字段、空/过短响应视为失败，不再按全文关键词匹配。
-    if ! response=$(curl -sL --max-time "$TIMEOUT" \
+    # 判定策略：将 HTTP 非 2xx、结构化错误字段、空/过短响应、以及可识别的 HTML 错误页视为失败。
+    if ! curl -sSL --max-time "$TIMEOUT" \
         -X POST \
         -H "Content-Type: application/json" \
         -H "User-Agent: SmartWebFetch/1.0" \
         -d "$payload" \
-        -w $'\n%{http_code}' \
-        "$MARKDOWN_NEW" 2>&1); then
+        -D "$headers_file" \
+        -o "$body_file" \
+        "$MARKDOWN_NEW"; then
         log_warn "markdown.new request failed"
+        rm -f "$headers_file" "$body_file"
         return 1
     fi
-    http_code="${response##*$'\n'}"
-    response="${response%$'\n'*}"
+
+    http_code=$(extract_http_status_code "$headers_file")
+    content_type=$(extract_content_type "$headers_file")
+    response=$(cat "$body_file")
+    rm -f "$headers_file" "$body_file"
 
     if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
         log_warn "markdown.new returned HTTP ${http_code:-unknown}"
+        return 1
+    fi
+
+    if is_likely_html_error_payload "$response" "$content_type"; then
+        log_warn "markdown.new returned HTML error page (content-type: ${content_type:-unknown})"
         return 1
     fi
 
@@ -366,26 +420,41 @@ fetch_defuddle() {
     local response
     local payload=""
     local http_code
+    local content_type=""
+    local headers_file=""
+    local body_file=""
 
     log_info "Trying defuddle.md"
     payload=$(build_url_json_payload "$url")
+    headers_file=$(mktemp)
+    body_file=$(mktemp)
 
-    # 判定策略：仅将 HTTP 非 2xx、结构化错误字段、空/过短响应视为失败，不再按全文关键词匹配。
-    if ! response=$(curl -sL --max-time "$TIMEOUT" \
+    # 判定策略：将 HTTP 非 2xx、结构化错误字段、空/过短响应、以及可识别的 HTML 错误页视为失败。
+    if ! curl -sSL --max-time "$TIMEOUT" \
         -X POST \
         -H "Content-Type: application/json" \
         -H "User-Agent: SmartWebFetch/1.0" \
         -d "$payload" \
-        -w $'\n%{http_code}' \
-        "$DEFUDDLE_MD" 2>&1); then
+        -D "$headers_file" \
+        -o "$body_file" \
+        "$DEFUDDLE_MD"; then
         log_warn "defuddle.md request failed"
+        rm -f "$headers_file" "$body_file"
         return 1
     fi
-    http_code="${response##*$'\n'}"
-    response="${response%$'\n'*}"
+
+    http_code=$(extract_http_status_code "$headers_file")
+    content_type=$(extract_content_type "$headers_file")
+    response=$(cat "$body_file")
+    rm -f "$headers_file" "$body_file"
 
     if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
         log_warn "defuddle.md returned HTTP ${http_code:-unknown}"
+        return 1
+    fi
+
+    if is_likely_html_error_payload "$response" "$content_type"; then
+        log_warn "defuddle.md returned HTML error page (content-type: ${content_type:-unknown})"
         return 1
     fi
 
@@ -407,14 +476,35 @@ fetch_basic() {
     local url="$1"
     local response
     local processed_response
+    local http_code
+    local headers_file
+    local body_file
 
     log_info "Trying direct curl fallback"
+    headers_file=$(mktemp)
+    body_file=$(mktemp)
 
-    if ! response=$(curl -sL --max-time "$TIMEOUT" \
+    if ! curl -sSL --max-time "$TIMEOUT" \
         -H "User-Agent: Mozilla/5.0" \
         -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
-        "$url" 2>&1); then
+        -D "$headers_file" \
+        -o "$body_file" \
+        "$url"; then
         log_warn "Direct curl fallback failed"
+        rm -f "$headers_file" "$body_file"
+        return 1
+    fi
+    http_code=$(extract_http_status_code "$headers_file")
+    response=$(cat "$body_file")
+    rm -f "$headers_file" "$body_file"
+
+    if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+        log_warn "Direct curl fallback returned HTTP ${http_code:-unknown}"
+        return 1
+    fi
+
+    if [[ -z "$response" ]] || [[ ${#response} -lt "$BASIC_MIN_LENGTH" ]]; then
+        log_warn "Direct curl fallback returned empty or too-short content"
         return 1
     fi
 

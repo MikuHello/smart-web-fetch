@@ -182,6 +182,9 @@ smart-web-fetch https://example.com https://openai.com
 ./smart-web-fetch.ps1 -Help
 ./smart-web-fetch.ps1 -h
 ./smart-web-fetch.ps1 --help
+# 仅支持一个 URL：多 URL 或未知参数会直接报错
+./smart-web-fetch.ps1 https://example.com https://openai.com
+./smart-web-fetch.ps1 https://example.com -VerbosMode
 ```
 
 ### 参数说明
@@ -199,6 +202,8 @@ smart-web-fetch https://example.com https://openai.com
 | PowerShell：`-VerboseMode` | 显示详细日志 |
 | PowerShell：`-NoClean` | 跳过基础 fallback 路径中的 HTML 清洗 |
 
+> PowerShell 版会严格校验额外参数：仅允许一个 URL；未知参数（如拼写错误的开关）会直接报错，避免静默忽略。
+
 ## 默认服务顺序
 
 默认自动尝试顺序：
@@ -207,6 +212,10 @@ smart-web-fetch https://example.com https://openai.com
 2. `markdown`
 3. `defuddle`
 4. 基础 fallback
+
+补充判定规则（Bash 与 PowerShell 一致）：
+- 对所有路径统一要求 HTTP 2xx（包含基础 fallback）。
+- `markdown.new` / `defuddle` 除结构化错误判定外，还会识别典型 HTML 错误页（例如 Access Denied/CAPTCHA/网关错误）并按失败处理。
 
 ## 说明
 

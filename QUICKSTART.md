@@ -59,6 +59,11 @@ pwsh -File .\smart-web-fetch.ps1 https://example.com
 ./smart-web-fetch.ps1 https://example.com -NoClean
 ```
 
+## 参数校验说明（PowerShell）
+
+- 仅允许一个 URL 参数。
+- 未知参数会直接报错（例如 `-VerbosMode` 这类拼写错误不会被静默忽略）。
+
 
 ## 显示帮助
 
