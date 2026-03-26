@@ -9,7 +9,10 @@ param(
     [Alias('v')]
     [switch]$VerboseMode,
     [switch]$NoClean,
-    [switch]$Help
+    [Alias('h', 'help')]
+    [switch]$Help,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$ExtraArgs
 )
 
 $ErrorActionPreference = 'Stop'
@@ -444,6 +447,23 @@ function Smart-Fetch([string]$TargetUrl, [string]$ForcedService) {
     }
 
     throw 'All fetch methods failed'
+}
+
+# Compatibility: allow GNU-style --help to reach Show-Help in PowerShell.
+if (-not $Help) {
+    $helpTokens = @('-h', '-help', '--help')
+
+    if ($helpTokens -contains $Url) {
+        $Help = $true
+        $Url = $null
+    } elseif ($ExtraArgs) {
+        foreach ($arg in $ExtraArgs) {
+            if ($helpTokens -contains $arg) {
+                $Help = $true
+                break
+            }
+        }
+    }
 }
 
 try {

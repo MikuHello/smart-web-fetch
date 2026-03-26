@@ -161,19 +161,25 @@ smart-web-fetch https://example.com -s -v
 ./smart-web-fetch.ps1 https://example.com -Service jina
 ./smart-web-fetch.ps1 https://example.com -NoClean
 ./smart-web-fetch.ps1 https://example.com -VerboseMode
+./smart-web-fetch.ps1 -Help
+./smart-web-fetch.ps1 -h
+./smart-web-fetch.ps1 --help
 ```
 
 ### 参数说明
 
 | 参数 | 说明 |
 | --- | --- |
-| `-h`, `--help` | 显示帮助 |
-| `-o`, `--output FILE` | 输出到文件 |
-| `-s`, `--service NAME` | 指定服务：`jina`、`markdown` 或 `defuddle` |
-| `-v`, `--verbose` | 显示详细日志 |
-| `--no-clean` | 跳过基础 fallback 路径中的 HTML 清洗 |
-
-PowerShell 对应参数：`-Output`、`-Service`、`-VerboseMode`、`-NoClean`。
+| Bash：`-h`, `--help` | 显示帮助 |
+| Bash：`-o`, `--output FILE` | 输出到文件 |
+| Bash：`-s`, `--service NAME` | 指定服务：`jina`、`markdown` 或 `defuddle` |
+| Bash：`-v`, `--verbose` | 显示详细日志 |
+| Bash：`--no-clean` | 跳过基础 fallback 路径中的 HTML 清洗 |
+| PowerShell：`-Help`, `-h`, `--help` | 显示帮助（`--help` 兼容） |
+| PowerShell：`-Output` | 输出到文件 |
+| PowerShell：`-Service` | 指定服务：`jina`、`markdown` 或 `defuddle` |
+| PowerShell：`-VerboseMode` | 显示详细日志 |
+| PowerShell：`-NoClean` | 跳过基础 fallback 路径中的 HTML 清洗 |
 
 ## 默认服务顺序
 
