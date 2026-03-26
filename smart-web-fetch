@@ -156,11 +156,16 @@ clean_html() {
     if command -v perl >/dev/null 2>&1; then
         perl -0pe 's{<script\b[^>]*>.*?</script>}{}gsi; s{<style\b[^>]*>.*?</style>}{}gsi; s{<noscript\b[^>]*>.*?</noscript>}{}gsi; s{<nav\b[^>]*>.*?</nav>}{}gsi; s{<header\b[^>]*>.*?</header>}{}gsi; s{<footer\b[^>]*>.*?</footer>}{}gsi; s{<aside\b[^>]*>.*?</aside>}{}gsi; s{<!--.*?-->}{}gsi; s{\s(?:class|id|style|on\w+)=("[^"]*"|'"'"'[^'"'"']*'"'"')}{}gsi;'
     else
+        # sed 分支仅做基础清洗：支持移除 class/id/style/on* 属性的双引号与单引号赋值（如 class="..."、class='...'、onload="..."、onload='...'）。
         sed \
             -e 's/class="[^"]*"//g' \
+            -e 's/class='"'"'[^'"'"']*'"'"'//g' \
             -e 's/id="[^"]*"//g' \
+            -e 's/id='"'"'[^'"'"']*'"'"'//g' \
             -e 's/style="[^"]*"//g' \
-            -e 's/on[a-zA-Z0-9_]*="[^"]*"//g'
+            -e 's/style='"'"'[^'"'"']*'"'"'//g' \
+            -e 's/on[a-zA-Z0-9_]*="[^"]*"//g' \
+            -e 's/on[a-zA-Z0-9_]*='"'"'[^'"'"']*'"'"'//g'
     fi
 }
 
