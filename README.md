@@ -36,18 +36,34 @@
 
 ### Bash / 类 Unix CLI
 
-- `curl`：必需
+- `curl`：必需（启动时强校验；缺失直接报错并退出）
 - `jq`：可选，用于从 JSON 响应中提取 Markdown 字段
 - `html2text` 或 `lynx`：可选，用于将 fallback HTML 转成纯文本
 - `perl`：可选，用于在 fallback 模式下进行更强的 HTML 清洗
 
 ### PowerShell CLI
 
-- PowerShell 7 + `Invoke-WebRequest`：必需
+- PowerShell 7 + `Invoke-WebRequest`：必需（启动时强校验；缺失直接报错并退出）
 - `html2text` 或 `lynx`：可选，用于将 fallback HTML 转成纯文本
 - `jq`：可选，安装后会优先用于 `markdown.new` 的 JSON 字段提取
 - `perl`：可选，安装后会优先用于基础 fallback 的更强 HTML 清洗
 - 默认 PowerShell 流程不依赖 `curl`，未安装 `jq` / `perl` 时会回退到原生 PowerShell 解析与清洗逻辑
+
+### 启动时依赖检查与行为对应
+
+> 两个 CLI 都会在开始抓取前执行依赖检查；错误统一为 `[ERROR] [Dependency] ...` 格式。
+
+| 运行入口 | 依赖项 | 类型 | 启动时行为 |
+| --- | --- | --- | --- |
+| `smart-web-fetch` (Bash) | `curl` | 必需 | 缺失时立即报错并退出 |
+| `smart-web-fetch` (Bash) | `jq` | 可选 | 缺失时仅提示（verbose 下），继续运行并回退 |
+| `smart-web-fetch` (Bash) | `perl` | 可选 | 缺失时仅提示（verbose 下），继续运行并回退到 `sed` 清洗 |
+| `smart-web-fetch` (Bash) | `html2text` / `lynx` | 可选 | 两者都缺失时仅提示（verbose 下），继续运行并输出清洗后的 HTML |
+| `smart-web-fetch.ps1` (PowerShell) | PowerShell 7+ | 必需 | 版本不足时立即报错并退出 |
+| `smart-web-fetch.ps1` (PowerShell) | `Invoke-WebRequest` | 必需 | 不可用时立即报错并退出 |
+| `smart-web-fetch.ps1` (PowerShell) | `jq` | 可选 | 缺失时仅提示（verbose 下），继续运行并回退到原生 JSON 解析 |
+| `smart-web-fetch.ps1` (PowerShell) | `perl` | 可选 | 缺失时仅提示（verbose 下），继续运行并回退到 PowerShell 正则清洗 |
+| `smart-web-fetch.ps1` (PowerShell) | `html2text` / `lynx` | 可选 | 两者都缺失时仅提示（verbose 下），继续运行并输出清洗后的 HTML |
 
 ### 常见安装示例
 
