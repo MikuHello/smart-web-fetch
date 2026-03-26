@@ -208,16 +208,65 @@ function Invoke-Request([string]$RequestUrl, [string]$Method = 'GET', [hashtable
     }
 
     $response = Invoke-WebRequest @params
-    return $response.Content
+    $contentType = $null
+    if ($response.Headers -and $response.Headers['Content-Type']) {
+        $contentType = [string]$response.Headers['Content-Type']
+    }
+
+    return [PSCustomObject]@{
+        Content     = [string]$response.Content
+        StatusCode  = [int]$response.StatusCode
+        ContentType = $contentType
+    }
 }
 
-function Test-InvalidContent([string]$Content, [int]$MinLength = 1) {
+function Test-LikelyHtmlErrorPayload([string]$Content, [string]$ContentType) {
+    if ([string]::IsNullOrWhiteSpace($ContentType)) {
+        return $false
+    }
+
+    $lowerContentType = $ContentType.ToLowerInvariant()
+    if (-not ($lowerContentType.Contains('text/html') -or $lowerContentType.Contains('application/xhtml+xml'))) {
+        return $false
+    }
+
+    $lowerContent = $Content.ToLowerInvariant()
+    if (-not ($lowerContent.Contains('<html') -or $lowerContent.Contains('<title'))) {
+        return $false
+    }
+
+    $errorPatterns = @(
+        'access denied',
+        'forbidden',
+        'captcha',
+        'cloudflare',
+        'just a moment',
+        'unauthorized',
+        'bad gateway',
+        'gateway timeout',
+        'service unavailable'
+    )
+
+    foreach ($pattern in $errorPatterns) {
+        if ($lowerContent.Contains($pattern)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Test-InvalidContent([string]$Content, [int]$MinLength = 1, [string]$ContentType = $null, [switch]$ExpectJsonResponse) {
     # 判定策略：仅将空响应/过短响应和结构化错误字段视为失败，避免误伤正文中出现 "error" 字样的正常内容。
     if ([string]::IsNullOrWhiteSpace($Content)) {
         return $true
     }
 
     if ($Content.Length -lt $MinLength) {
+        return $true
+    }
+
+    if ($ExpectJsonResponse -and (Test-LikelyHtmlErrorPayload -Content $Content -ContentType $ContentType)) {
         return $true
     }
 
@@ -343,8 +392,9 @@ function Fetch-Jina([string]$TargetUrl) {
     Set-LastFetchError $null
     try {
         $jinaRequestUrl = Get-JinaRequestUrl $TargetUrl
-        $response = Invoke-Request -RequestUrl $jinaRequestUrl -Headers @{ 'User-Agent' = 'SmartWebFetch/1.0' }
-        if (Test-InvalidContent -Content $response -MinLength $JinaMinLength) {
+        $request = Invoke-Request -RequestUrl $jinaRequestUrl -Headers @{ 'User-Agent' = 'SmartWebFetch/1.0' }
+        $response = $request.Content
+        if (Test-InvalidContent -Content $response -MinLength $JinaMinLength -ContentType $request.ContentType) {
             Set-LastFetchError 'Jina Reader returned invalid or incomplete content'
             Write-WarnLog $script:LastFetchError
             return $null
@@ -364,13 +414,14 @@ function Fetch-MarkdownNew([string]$TargetUrl) {
     Set-LastFetchError $null
     try {
         $body = @{ url = $TargetUrl } | ConvertTo-Json -Compress
-        $response = Invoke-Request -RequestUrl $MarkdownNew -Method 'POST' -Headers @{
+        $request = Invoke-Request -RequestUrl $MarkdownNew -Method 'POST' -Headers @{
             'Content-Type' = 'application/json'
             'User-Agent'   = 'SmartWebFetch/1.0'
         } -Body $body
+        $response = $request.Content
 
-        if (Test-InvalidContent -Content $response -MinLength $MarkdownNewMinLength) {
-            Set-LastFetchError 'markdown.new returned invalid content'
+        if (Test-InvalidContent -Content $response -MinLength $MarkdownNewMinLength -ContentType $request.ContentType -ExpectJsonResponse) {
+            Set-LastFetchError "markdown.new returned invalid content (content-type: $($request.ContentType))"
             Write-WarnLog $script:LastFetchError
             return $null
         }
@@ -407,13 +458,14 @@ function Fetch-Defuddle([string]$TargetUrl) {
     Set-LastFetchError $null
     try {
         $body = @{ url = $TargetUrl } | ConvertTo-Json -Compress
-        $response = Invoke-Request -RequestUrl $DefuddleMd -Method 'POST' -Headers @{
+        $request = Invoke-Request -RequestUrl $DefuddleMd -Method 'POST' -Headers @{
             'Content-Type' = 'application/json'
             'User-Agent'   = 'SmartWebFetch/1.0'
         } -Body $body
+        $response = $request.Content
 
-        if (Test-InvalidContent -Content $response -MinLength $DefuddleMinLength) {
-            Set-LastFetchError 'defuddle.md returned invalid content'
+        if (Test-InvalidContent -Content $response -MinLength $DefuddleMinLength -ContentType $request.ContentType -ExpectJsonResponse) {
+            Set-LastFetchError "defuddle.md returned invalid content (content-type: $($request.ContentType))"
             Write-WarnLog $script:LastFetchError
             return $null
         }
@@ -431,9 +483,22 @@ function Fetch-Basic([string]$TargetUrl) {
     Write-Info 'Trying basic fallback'
     Set-LastFetchError $null
     try {
-        $response = Invoke-Request -RequestUrl $TargetUrl -Headers @{
+        $request = Invoke-Request -RequestUrl $TargetUrl -Headers @{
             'User-Agent' = 'Mozilla/5.0'
             'Accept'     = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        }
+        $response = $request.Content
+
+        if ($request.StatusCode -lt 200 -or $request.StatusCode -gt 299) {
+            Set-LastFetchError "Basic fallback returned HTTP $($request.StatusCode)"
+            Write-WarnLog $script:LastFetchError
+            return $null
+        }
+
+        if ([string]::IsNullOrWhiteSpace($response) -or $response.Length -lt 40) {
+            Set-LastFetchError 'Basic fallback returned invalid or incomplete content'
+            Write-WarnLog $script:LastFetchError
+            return $null
         }
 
         $processed = $response
@@ -497,6 +562,33 @@ function Smart-Fetch([string]$TargetUrl, [string]$ForcedService) {
     throw 'All fetch methods failed'
 }
 
+function Validate-ExtraArgs([string[]]$Args, [bool]$HelpRequested) {
+    if (-not $Args -or $Args.Count -eq 0) {
+        return
+    }
+
+    $helpTokens = @('-h', '-help', '--help')
+    foreach ($arg in $Args) {
+        if ($helpTokens -contains $arg) {
+            continue
+        }
+
+        if ($arg -match '^-') {
+            throw "Unknown option: $arg"
+        }
+
+        if ($arg -match '^(?i)https?://|^[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}([/:?#].*)?$') {
+            throw '仅支持一个 URL 参数'
+        }
+
+        throw "Unexpected argument: $arg"
+    }
+
+    if (-not $HelpRequested -and ($Args | Where-Object { $helpTokens -contains $_ })) {
+        throw 'Help flag must be used without extra positional arguments'
+    }
+}
+
 # Compatibility: allow GNU-style --help to reach Show-Help in PowerShell.
 if (-not $Help) {
     $helpTokens = @('-h', '-help', '--help')
@@ -515,6 +607,8 @@ if (-not $Help) {
 }
 
 try {
+    Validate-ExtraArgs -Args $ExtraArgs -HelpRequested $Help
+
     if ($Help) {
         Show-Help
         exit 0
