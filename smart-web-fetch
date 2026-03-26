@@ -467,6 +467,9 @@ smart_fetch() {
                 exit_with_help_error "Invalid service: ${specified_service}. Allowed values: jina|markdown|defuddle"
                 ;;
         esac
+
+        log_error "Forced service failed: ${specified_service}"
+        return 1
     fi
 
     result=$(fetch_jina "$url") && { printf '%s\n' "$result"; return 0; }
@@ -532,11 +535,9 @@ fi
 
 check_runtime_dependencies
 
-CONTENT=$(smart_fetch "$URL" "$SERVICE")
-
 if [[ -n "$OUTPUT" ]]; then
-    printf '%s\n' "$CONTENT" > "$OUTPUT"
+    smart_fetch "$URL" "$SERVICE" > "$OUTPUT"
     log_success "Saved output to: $OUTPUT"
 else
-    printf '%s\n' "$CONTENT"
+    smart_fetch "$URL" "$SERVICE"
 fi

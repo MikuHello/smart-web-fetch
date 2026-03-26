@@ -35,15 +35,5 @@
         }
       ]
     }
-  ],
-  "hooks": {
-    "user-prompt-submit": {
-      "commands": [
-        {
-          "command": "if echo '{{INPUT}}' | grep -qiE '((fetch|read|grab|get|extract|convert).*(web ?page|url|article|markdown)|(web ?page|url|article).*(fetch|read|grab|get|extract|convert)).*https?://'; then URL=$(echo '{{INPUT}}' | grep -oE 'https?://[^ ]+' | head -1); echo 'Detected a web-fetch request; try: smart-web-fetch \\\"'$URL'\\\"'; fi",
-          "description": "Suggest smart-web-fetch when a prompt includes a URL fetch request"
-        }
-      ]
-    }
-  }
+  ]
 }
