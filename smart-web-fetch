@@ -100,6 +100,8 @@ is_structured_error_response() {
         fi
     fi
 
+    # Fallback without jq: only treat JSON-looking payloads with explicit
+    # "error"/"message" keys and common failure semantics as structured errors.
     compact_response=$(printf '%s' "$response" | tr -d '[:space:]')
     if [[ ! "$compact_response" =~ ^[\{\[] ]]; then
         return 1
