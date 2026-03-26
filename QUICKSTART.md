@@ -59,6 +59,20 @@ pwsh -File .\smart-web-fetch.ps1 https://example.com
 ./smart-web-fetch.ps1 https://example.com -NoClean
 ```
 
+
+## 显示帮助
+
+```bash
+./smart-web-fetch -h
+./smart-web-fetch --help
+```
+
+```powershell
+./smart-web-fetch.ps1 -Help
+./smart-web-fetch.ps1 -h
+./smart-web-fetch.ps1 --help
+```
+
 ## 平台说明
 
 - Bash / 类 Unix CLI：依赖 `curl`，`jq`、`html2text`、`lynx`、`perl` 都是可选辅助工具。
