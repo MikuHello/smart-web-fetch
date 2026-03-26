@@ -43,6 +43,8 @@ The tool tries providers in this order unless a service is forced:
 3. `defuddle`
 4. direct fallback
 
+When a service is explicitly forced via `-s/--service` (Bash) or `-Service` (PowerShell), the CLI only attempts that provider. If it fails, the command exits with an error instead of continuing to other providers.
+
 The clean-skip flag only changes the basic fallback path. External provider output is passed through unchanged.
 
 ## Requirements

@@ -190,12 +190,12 @@ smart-web-fetch https://example.com https://openai.com
 | --- | --- |
 | Bash：`-h`, `--help` | 显示帮助 |
 | Bash：`-o`, `--output FILE` | 输出到文件 |
-| Bash：`-s`, `--service NAME` | 指定服务：`jina`、`markdown` 或 `defuddle` |
+| Bash：`-s`, `--service NAME` | 强制指定服务：`jina`、`markdown` 或 `defuddle`（失败即报错，不再自动降级） |
 | Bash：`-v`, `--verbose` | 显示详细日志 |
 | Bash：`--no-clean` | 跳过基础 fallback 路径中的 HTML 清洗 |
 | PowerShell：`-Help`, `-h`, `--help` | 显示帮助（`--help` 兼容） |
 | PowerShell：`-Output` | 输出到文件 |
-| PowerShell：`-Service` | 指定服务：`jina`、`markdown` 或 `defuddle` |
+| PowerShell：`-Service` | 强制指定服务：`jina`、`markdown` 或 `defuddle`（失败即报错，不再自动降级） |
 | PowerShell：`-VerboseMode` | 显示详细日志 |
 | PowerShell：`-NoClean` | 跳过基础 fallback 路径中的 HTML 清洗 |
 
