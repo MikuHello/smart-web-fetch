@@ -530,6 +530,11 @@ try {
     $content = Smart-Fetch -TargetUrl $Url -ForcedService $Service
 
     if ($Output) {
+        $parent = Split-Path -Parent $Output
+        if (-not [string]::IsNullOrWhiteSpace($parent) -and -not (Test-Path -LiteralPath $parent)) {
+            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+        }
+
         $content | Set-Content -Encoding UTF8 $Output
         Write-Success "Saved output to: $Output"
     } else {
