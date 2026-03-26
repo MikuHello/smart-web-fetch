@@ -536,8 +536,17 @@ fi
 check_runtime_dependencies
 
 if [[ -n "$OUTPUT" ]]; then
-    smart_fetch "$URL" "$SERVICE" > "$OUTPUT"
-    log_success "Saved output to: $OUTPUT"
+    OUTPUT_DIR=$(dirname "$OUTPUT")
+    OUTPUT_BASENAME=$(basename "$OUTPUT")
+    TMP_OUTPUT=$(mktemp "$OUTPUT_DIR/.${OUTPUT_BASENAME}.tmp.XXXXXX")
+
+    if smart_fetch "$URL" "$SERVICE" > "$TMP_OUTPUT"; then
+        mv "$TMP_OUTPUT" "$OUTPUT"
+        log_success "Saved output to: $OUTPUT"
+    else
+        rm -f "$TMP_OUTPUT"
+        exit 1
+    fi
 else
     smart_fetch "$URL" "$SERVICE"
 fi
