@@ -281,7 +281,7 @@ function Test-InvalidContent([string]$Content, [int]$MinLength = 1, [string]$Con
                     return $true
                 }
 
-                if ($errorValue -is [string] -and $errorValue -match '(?i)(error|fail|invalid|unauthorized|forbidden|not found)') {
+                if ($errorValue -is [string] -and $errorValue -match '(?i)(error|fail|invalid|unauthorized|forbidden|denied|blocked|not found|rate limit|too many requests)') {
                     return $true
                 }
             }
@@ -289,7 +289,7 @@ function Test-InvalidContent([string]$Content, [int]$MinLength = 1, [string]$Con
             $messageField = $json.PSObject.Properties['message']
             if ($null -ne $messageField) {
                 $messageValue = [string]$messageField.Value
-                if (-not [string]::IsNullOrWhiteSpace($messageValue) -and $messageValue -match '(?i)(error|fail|invalid|unauthorized|forbidden|not found)') {
+                if (-not [string]::IsNullOrWhiteSpace($messageValue) -and $messageValue -match '(?i)(error|fail|invalid|unauthorized|forbidden|denied|blocked|not found|rate limit|too many requests)') {
                     return $true
                 }
             }

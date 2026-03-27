@@ -15,7 +15,7 @@
 
 ## 2) URL 归一化
 
-- 输入若不带 `http://` 或 `https://`，统一自动补 `https://`。
+- 输入若不带 `http://` 或 `https://`（大小写不敏感），统一自动补 `https://`。
 
 ## 3) 成功判定（所有 provider）
 
@@ -37,7 +37,7 @@
 当响应可被识别为 JSON 时，若存在以下语义应判定为失败：
 
 - `error` 字段为 `true`
-- `error` 或 `message` 字段文本包含失败语义（如 `error`、`fail`、`invalid`、`unauthorized`、`forbidden`、`not found`）
+- `error` 或 `message` 字段文本包含失败语义（如 `error`、`fail`、`invalid`、`unauthorized`、`forbidden`、`denied`、`blocked`、`not found`、`rate limit`、`too many requests`）
 
 ## 5) HTML 错误页判定（主要用于 JSON 预期 provider）
 
