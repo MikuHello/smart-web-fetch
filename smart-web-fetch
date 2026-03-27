@@ -177,10 +177,10 @@ is_structured_error_response() {
                 | (
                     ($error != null and (
                         ($error | type == "boolean" and $error == true)
-                        or ($error | type == "string" and ($error | test("(?i)error|fail|invalid|unauthorized|forbidden|not found")))
+                        or ($error | type == "string" and ($error | test("(?i)error|fail|invalid|unauthorized|forbidden|denied|blocked|not found|rate limit|too many requests"))
                     ))
                     or
-                    ($message != null and ($message | type == "string" and ($message | test("(?i)error|fail|invalid|unauthorized|forbidden|not found"))))
+                    ($message != null and ($message | type == "string" and ($message | test("(?i)error|fail|invalid|unauthorized|forbidden|denied|blocked|not found|rate limit|too many requests"))))
                 )
             else
                 false
@@ -253,9 +253,18 @@ clean_html() {
         perl -0pe 's{<script\b[^>]*>.*?</script>}{}gsi; s{<style\b[^>]*>.*?</style>}{}gsi; s{<noscript\b[^>]*>.*?</noscript>}{}gsi; s{<nav\b[^>]*>.*?</nav>}{}gsi; s{<header\b[^>]*>.*?</header>}{}gsi; s{<footer\b[^>]*>.*?</footer>}{}gsi; s{<aside\b[^>]*>.*?</aside>}{}gsi; s{<!--.*?-->}{}gsi; s{\s(?:class|id|style|on\w+)=("[^"]*"|'"'"'[^'"'"']*'"'"')}{}gsi;'
     else
         # 无 perl 时做保守清洗：
-        # 1) 删除噪音标签片段（尽量不丢弃同一行的非标签正文）
-        # 2) 继续执行属性清洗（class/id/style/on*）
+        # 1) 先删除跨行噪音块（script/style/noscript/nav/header/footer/aside + 注释）
+        # 2) 再删除同一行内的噪音标签片段（尽量不丢弃同一行的非标签正文）
+        # 3) 继续执行属性清洗（class/id/style/on*）
         sed \
+            -e '/<script[[:space:]>]/I,/<\/script>/Id' \
+            -e '/<style[[:space:]>]/I,/<\/style>/Id' \
+            -e '/<noscript[[:space:]>]/I,/<\/noscript>/Id' \
+            -e '/<nav[[:space:]>]/I,/<\/nav>/Id' \
+            -e '/<header[[:space:]>]/I,/<\/header>/Id' \
+            -e '/<footer[[:space:]>]/I,/<\/footer>/Id' \
+            -e '/<aside[[:space:]>]/I,/<\/aside>/Id' \
+            -e '/<!--/,/-->/d' \
             -e 's#<script[^>]*>[^<]*</script>##gI' \
             -e 's#<style[^>]*>[^<]*</style>##gI' \
             -e 's#<noscript[^>]*>[^<]*</noscript>##gI' \
