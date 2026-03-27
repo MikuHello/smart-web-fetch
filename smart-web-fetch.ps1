@@ -24,7 +24,27 @@ $JinaMinLength = 100
 $MarkdownNewMinLength = 40
 $DefuddleMinLength = 40
 $BasicMinLength = 40
+$RulesFile = Join-Path -Path $PSScriptRoot -ChildPath 'docs/fetch-rules.json'
 $script:LastFetchError = $null
+
+function Load-RulesFromFile {
+    if (-not (Test-Path -LiteralPath $RulesFile)) {
+        return
+    }
+
+    try {
+        $rules = Get-Content -LiteralPath $RulesFile -Raw | ConvertFrom-Json -ErrorAction Stop
+
+        if ($rules.thresholds.jina -as [int]) { $script:JinaMinLength = [int]$rules.thresholds.jina }
+        if ($rules.thresholds.markdown_new -as [int]) { $script:MarkdownNewMinLength = [int]$rules.thresholds.markdown_new }
+        if ($rules.thresholds.defuddle -as [int]) { $script:DefuddleMinLength = [int]$rules.thresholds.defuddle }
+        if ($rules.thresholds.basic -as [int]) { $script:BasicMinLength = [int]$rules.thresholds.basic }
+
+        Write-Info "Loaded thresholds from rules file: $RulesFile"
+    } catch {
+        Write-WarnLog "Failed to parse rules file, using built-in defaults: $RulesFile"
+    }
+}
 
 function Show-Help {
     @"
@@ -634,6 +654,7 @@ try {
     }
 
     Test-RuntimeDependencies
+    Load-RulesFromFile
 
     $content = Smart-Fetch -TargetUrl $Url -ForcedService $Service
 

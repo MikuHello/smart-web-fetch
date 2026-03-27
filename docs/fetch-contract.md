@@ -2,6 +2,13 @@
 
 本文件定义 `smart-web-fetch`（Bash）与 `smart-web-fetch.ps1`（PowerShell）在抓取判定上的统一契约。新增 provider 或调整判定规则时，应先更新本文件，再同步修改两个脚本。
 
+
+## 0) 规则来源（单一事实源）
+
+- 机器可读规则文件：`docs/fetch-rules.json`。
+- 该文件用于集中管理 provider 顺序、阈值与错误关键词。
+- 两个脚本应优先加载此文件；当文件缺失或解析失败时，回退到脚本内置默认值。
+
 ## 1) Provider 与默认顺序
 
 默认自动降级顺序：
@@ -68,3 +75,9 @@ basic fallback 需按阶段校验：
 - `README.md` 与 `QUICKSTART.md` 的行为描述应与本契约一致。
 - 两个脚本的阈值常量命名应保持一一对应，避免漂移。
 - 自动降级全部失败时，错误信息应尽量包含最后一次失败原因，便于定位问题。
+
+
+## 9) 离线回归样例
+
+- 参见 `docs/qa-cases.md` 与 `fixtures/`。
+- 契约或规则调整后，先更新 `docs/fetch-rules.json`，再按样例做最小回归。
