@@ -24,6 +24,29 @@ $JinaMinLength = 100
 $MarkdownNewMinLength = 40
 $DefuddleMinLength = 40
 $BasicMinLength = 40
+$script:StructuredErrorKeywords = @(
+    'error',
+    'fail',
+    'invalid',
+    'unauthorized',
+    'forbidden',
+    'denied',
+    'blocked',
+    'not found',
+    'rate limit',
+    'too many requests'
+)
+$script:HtmlErrorKeywords = @(
+    'access denied',
+    'forbidden',
+    'captcha',
+    'cloudflare',
+    'just a moment',
+    'unauthorized',
+    'bad gateway',
+    'gateway timeout',
+    'service unavailable'
+)
 $RulesFile = Join-Path -Path $PSScriptRoot -ChildPath 'docs/fetch-rules.json'
 $script:LastFetchError = $null
 
@@ -39,8 +62,14 @@ function Load-RulesFromFile {
         if ($rules.thresholds.markdown_new -as [int]) { $script:MarkdownNewMinLength = [int]$rules.thresholds.markdown_new }
         if ($rules.thresholds.defuddle -as [int]) { $script:DefuddleMinLength = [int]$rules.thresholds.defuddle }
         if ($rules.thresholds.basic -as [int]) { $script:BasicMinLength = [int]$rules.thresholds.basic }
+        if ($rules.structured_error_keywords -and $rules.structured_error_keywords.Count -gt 0) {
+            $script:StructuredErrorKeywords = @($rules.structured_error_keywords | ForEach-Object { [string]$_ })
+        }
+        if ($rules.html_error_keywords -and $rules.html_error_keywords.Count -gt 0) {
+            $script:HtmlErrorKeywords = @($rules.html_error_keywords | ForEach-Object { [string]$_ })
+        }
 
-        Write-Info "Loaded thresholds from rules file: $RulesFile"
+        Write-Info "Loaded thresholds and keywords from rules file: $RulesFile"
     } catch {
         Write-WarnLog "Failed to parse rules file, using built-in defaults: $RulesFile"
     }
@@ -241,6 +270,37 @@ function Invoke-Request([string]$RequestUrl, [string]$Method = 'GET', [hashtable
     }
 }
 
+function Normalize-KeywordText([string]$Text) {
+    if ($null -eq $Text) {
+        return ''
+    }
+
+    $normalized = $Text.ToLowerInvariant()
+    $normalized = $normalized -replace '[_-]', ' '
+    $normalized = $normalized -replace '\s+', ' '
+    return $normalized.Trim()
+}
+
+function Test-ContainsKeyword([string]$Text, [string[]]$Keywords) {
+    $normalizedText = Normalize-KeywordText $Text
+    if ([string]::IsNullOrWhiteSpace($normalizedText)) {
+        return $false
+    }
+
+    foreach ($keyword in $Keywords) {
+        $normalizedKeyword = Normalize-KeywordText ([string]$keyword)
+        if ([string]::IsNullOrWhiteSpace($normalizedKeyword)) {
+            continue
+        }
+
+        if ($normalizedText.Contains($normalizedKeyword)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Test-LikelyHtmlErrorPayload([string]$Content, [string]$ContentType) {
     if ([string]::IsNullOrWhiteSpace($ContentType)) {
         return $false
@@ -256,25 +316,7 @@ function Test-LikelyHtmlErrorPayload([string]$Content, [string]$ContentType) {
         return $false
     }
 
-    $errorPatterns = @(
-        'access denied',
-        'forbidden',
-        'captcha',
-        'cloudflare',
-        'just a moment',
-        'unauthorized',
-        'bad gateway',
-        'gateway timeout',
-        'service unavailable'
-    )
-
-    foreach ($pattern in $errorPatterns) {
-        if ($lowerContent.Contains($pattern)) {
-            return $true
-        }
-    }
-
-    return $false
+    return (Test-ContainsKeyword -Text $lowerContent -Keywords $script:HtmlErrorKeywords)
 }
 
 function Test-InvalidContent([string]$Content, [int]$MinLength = 1, [string]$ContentType = $null, [switch]$ExpectJsonResponse) {
@@ -301,7 +343,7 @@ function Test-InvalidContent([string]$Content, [int]$MinLength = 1, [string]$Con
                     return $true
                 }
 
-                if ($errorValue -is [string] -and $errorValue -match '(?i)(error|fail|invalid|unauthorized|forbidden|denied|blocked|not found|rate limit|too many requests)') {
+                if ($errorValue -is [string] -and (Test-ContainsKeyword -Text $errorValue -Keywords $script:StructuredErrorKeywords)) {
                     return $true
                 }
             }
@@ -309,7 +351,7 @@ function Test-InvalidContent([string]$Content, [int]$MinLength = 1, [string]$Con
             $messageField = $json.PSObject.Properties['message']
             if ($null -ne $messageField) {
                 $messageValue = [string]$messageField.Value
-                if (-not [string]::IsNullOrWhiteSpace($messageValue) -and $messageValue -match '(?i)(error|fail|invalid|unauthorized|forbidden|denied|blocked|not found|rate limit|too many requests)') {
+                if (-not [string]::IsNullOrWhiteSpace($messageValue) -and (Test-ContainsKeyword -Text $messageValue -Keywords $script:StructuredErrorKeywords)) {
                     return $true
                 }
             }

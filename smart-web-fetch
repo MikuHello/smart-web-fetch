@@ -14,6 +14,31 @@ MARKDOWN_NEW_MIN_LENGTH=40
 DEFUDDLE_MIN_LENGTH=40
 BASIC_MIN_LENGTH=40
 
+STRUCTURED_ERROR_KEYWORDS=(
+    "error"
+    "fail"
+    "invalid"
+    "unauthorized"
+    "forbidden"
+    "denied"
+    "blocked"
+    "not found"
+    "rate limit"
+    "too many requests"
+)
+
+HTML_ERROR_KEYWORDS=(
+    "access denied"
+    "forbidden"
+    "captcha"
+    "cloudflare"
+    "just a moment"
+    "unauthorized"
+    "bad gateway"
+    "gateway timeout"
+    "service unavailable"
+)
+
 JINA_READER_BASE="https://r.jina.ai"
 MARKDOWN_NEW="https://api.markdown.new/api/v1/convert"
 DEFUDDLE_MD="https://defuddle.md/api/convert"
@@ -84,7 +109,49 @@ load_rules_from_file() {
     value=$(jq -r '.thresholds.basic // empty' "$RULES_FILE" 2>/dev/null || true)
     [[ "$value" =~ ^[0-9]+$ ]] && BASIC_MIN_LENGTH="$value"
 
-    log_info "Loaded thresholds from rules file: $RULES_FILE"
+    local -a structured_keywords=()
+    local -a html_keywords=()
+
+    mapfile -t structured_keywords < <(jq -r '.structured_error_keywords[]? // empty' "$RULES_FILE" 2>/dev/null || true)
+    if [[ ${#structured_keywords[@]} -gt 0 ]]; then
+        STRUCTURED_ERROR_KEYWORDS=("${structured_keywords[@]}")
+    fi
+
+    mapfile -t html_keywords < <(jq -r '.html_error_keywords[]? // empty' "$RULES_FILE" 2>/dev/null || true)
+    if [[ ${#html_keywords[@]} -gt 0 ]]; then
+        HTML_ERROR_KEYWORDS=("${html_keywords[@]}")
+    fi
+
+    log_info "Loaded thresholds and keywords from rules file: $RULES_FILE"
+}
+
+normalize_keyword_text() {
+    local text="$1"
+    printf '%s' "$text" \
+        | tr '[:upper:]' '[:lower:]' \
+        | tr '_-' ' ' \
+        | tr -s '[:space:]' ' ' \
+        | sed 's/^ //; s/ $//'
+}
+
+contains_error_keyword() {
+    local text="$1"
+    local normalized_text
+    local keyword
+    local normalized_keyword
+
+    normalized_text=$(normalize_keyword_text "$text")
+    [[ -z "$normalized_text" ]] && return 1
+
+    for keyword in "${STRUCTURED_ERROR_KEYWORDS[@]}"; do
+        normalized_keyword=$(normalize_keyword_text "$keyword")
+        [[ -z "$normalized_keyword" ]] && continue
+        if [[ "$normalized_text" == *"$normalized_keyword"* ]]; then
+            return 0
+        fi
+    done
+
+    return 1
 }
 
 trap cleanup_tmp_files EXIT
@@ -241,25 +308,23 @@ is_structured_error_response() {
     local response="$1"
     local compact_response
     local lowered_response
+    local error_value=""
+    local message_value=""
 
     if command -v jq >/dev/null 2>&1; then
-        if printf '%s' "$response" | jq -e '
-            if type == "object" then
-                .error as $error
-                | .message as $message
-                | (
-                        ($error != null and (
-                            ($error | type == "boolean" and $error == true)
-                            or ($error | type == "string" and ($error | test("(?i)error|fail|invalid|unauthorized|forbidden|denied|blocked|not found|rate limit|too many requests")))
-                        ))
-                        or
-                        ($message != null and ($message | type == "string" and ($message | test("(?i)error|fail|invalid|unauthorized|forbidden|denied|blocked|not found|rate limit|too many requests"))))
-                )
-            else
-                false
-            end
-        ' >/dev/null 2>&1; then
-            return 0
+        if printf '%s' "$response" | jq -e 'type == "object"' >/dev/null 2>&1; then
+            if [[ "$(printf '%s' "$response" | jq -r 'if (.error | type) == "boolean" then .error else empty end' 2>/dev/null || true)" == "true" ]]; then
+                return 0
+            fi
+
+            error_value=$(printf '%s' "$response" | jq -r 'if (.error | type) == "string" then .error else empty end' 2>/dev/null || true)
+            message_value=$(printf '%s' "$response" | jq -r 'if (.message | type) == "string" then .message else empty end' 2>/dev/null || true)
+
+            if contains_error_keyword "$error_value" || contains_error_keyword "$message_value"; then
+                return 0
+            fi
+
+            return 1
         fi
     fi
 
@@ -276,7 +341,10 @@ is_structured_error_response() {
         return 0
     fi
 
-    if [[ "$lowered_response" =~ \"(error|message)\":\"[^\"]*(error|fail|invalid|unauthorized|forbidden|denied|blocked|not[[:space:]_-]?found|rate[[:space:]_-]?limit|too[[:space:]_-]?many[[:space:]_-]?requests)[^\"]*\" ]]; then
+    error_value=$(printf '%s' "$response" | sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    message_value=$(printf '%s' "$response" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+
+    if contains_error_keyword "$error_value" || contains_error_keyword "$message_value"; then
         return 0
     fi
 
@@ -304,6 +372,9 @@ is_likely_html_error_payload() {
     local response="$1"
     local content_type="$2"
     local lowered_response=""
+    local normalized_response=""
+    local keyword
+    local normalized_keyword
 
     if [[ "$content_type" != *"text/html"* ]] && [[ "$content_type" != *"application/xhtml+xml"* ]]; then
         return 1
@@ -314,9 +385,14 @@ is_likely_html_error_payload() {
         return 1
     fi
 
-    if [[ "$lowered_response" =~ (access[[:space:]]denied|forbidden|captcha|cloudflare|just[[:space:]]a[[:space:]]moment|unauthorized|bad[[:space:]]gateway|gateway[[:space:]]timeout|service[[:space:]]unavailable) ]]; then
-        return 0
-    fi
+    normalized_response=$(normalize_keyword_text "$lowered_response")
+    for keyword in "${HTML_ERROR_KEYWORDS[@]}"; do
+        normalized_keyword=$(normalize_keyword_text "$keyword")
+        [[ -z "$normalized_keyword" ]] && continue
+        if [[ "$normalized_response" == *"$normalized_keyword"* ]]; then
+            return 0
+        fi
+    done
 
     return 1
 }
@@ -465,6 +541,31 @@ json_escape_minimal() {
     printf '%s' "$output"
 }
 
+extract_markdown_from_json_without_jq() {
+    local response="$1"
+    local value=""
+
+    value=$(printf '%s' "$response" | sed -n 's/.*"markdown"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    if [[ -n "$value" ]]; then
+        printf '%s' "$value"
+        return 0
+    fi
+
+    value=$(printf '%s' "$response" | sed -n 's/.*"content"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    if [[ -n "$value" ]]; then
+        printf '%s' "$value"
+        return 0
+    fi
+
+    value=$(printf '%s' "$response" | sed -n 's/.*"data"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    if [[ -n "$value" ]]; then
+        printf '%s' "$value"
+        return 0
+    fi
+
+    return 1
+}
+
 fetch_jina() {
     local url="$1"
     local response
@@ -591,6 +692,8 @@ fetch_markdown_new() {
 
     if command -v jq >/dev/null 2>&1; then
         markdown=$(printf '%s' "$response" | jq -r '.markdown // .content // .data // empty' 2>/dev/null || true)
+    elif [[ "$is_json_object" == "1" ]]; then
+        markdown=$(extract_markdown_from_json_without_jq "$response" || true)
     fi
 
     if [[ "$is_json_object" == "1" ]] && ([[ -z "$markdown" ]] || [[ "$markdown" == "null" ]]); then
