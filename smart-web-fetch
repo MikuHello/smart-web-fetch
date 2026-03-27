@@ -545,23 +545,135 @@ extract_markdown_from_json_without_jq() {
     local response="$1"
     local value=""
 
-    value=$(printf '%s' "$response" | sed -n 's/.*"markdown"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    value=$(extract_json_string_field_without_jq "$response" "markdown" || true)
     if [[ -n "$value" ]]; then
         printf '%s' "$value"
         return 0
     fi
 
-    value=$(printf '%s' "$response" | sed -n 's/.*"content"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    value=$(extract_json_string_field_without_jq "$response" "content" || true)
     if [[ -n "$value" ]]; then
         printf '%s' "$value"
         return 0
     fi
 
-    value=$(printf '%s' "$response" | sed -n 's/.*"data"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    value=$(extract_json_string_field_without_jq "$response" "data" || true)
     if [[ -n "$value" ]]; then
         printf '%s' "$value"
         return 0
     fi
+
+    return 1
+}
+
+skip_json_whitespace_without_jq() {
+    local input="$1"
+    local pos="$2"
+    local length=${#input}
+    local char=""
+
+    while (( pos < length )); do
+        char="${input:pos:1}"
+        case "$char" in
+            $' ' | $'\t' | $'\r' | $'\n') ((pos++)) ;;
+            *) break ;;
+        esac
+    done
+
+    printf '%s' "$pos"
+}
+
+parse_json_string_without_jq() {
+    local input="$1"
+    local start="$2"
+    local length=${#input}
+    local pos=$((start + 1))
+    local output=""
+    local char=""
+    local esc=""
+    local hex=""
+
+    JSON_PARSE_VALUE=""
+    JSON_PARSE_NEXT_INDEX=""
+
+    while (( pos < length )); do
+        char="${input:pos:1}"
+        if [[ "$char" == '"' ]]; then
+            JSON_PARSE_VALUE="$output"
+            JSON_PARSE_NEXT_INDEX=$((pos + 1))
+            return 0
+        fi
+
+        if [[ "$char" == '\' ]]; then
+            ((pos++))
+            if (( pos >= length )); then
+                return 1
+            fi
+            esc="${input:pos:1}"
+            case "$esc" in
+                '"'|'\'|'/') output+="$esc" ;;
+                b) output+=$'\b' ;;
+                f) output+=$'\f' ;;
+                n) output+=$'\n' ;;
+                r) output+=$'\r' ;;
+                t) output+=$'\t' ;;
+                u)
+                    if (( pos + 4 >= length )); then
+                        return 1
+                    fi
+                    hex="${input:pos+1:4}"
+                    if [[ ! "$hex" =~ ^[0-9A-Fa-f]{4}$ ]]; then
+                        return 1
+                    fi
+                    output+=$(printf '%b' "\\u$hex")
+                    ((pos+=4))
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+        else
+            output+="$char"
+        fi
+        ((pos++))
+    done
+
+    return 1
+}
+
+extract_json_string_field_without_jq() {
+    local input="$1"
+    local target_key="$2"
+    local length=${#input}
+    local pos=0
+    local char=""
+    local after_key_pos=""
+    local value_start=""
+
+    while (( pos < length )); do
+        char="${input:pos:1}"
+        if [[ "$char" != '"' ]]; then
+            ((pos++))
+            continue
+        fi
+
+        if ! parse_json_string_without_jq "$input" "$pos"; then
+            return 1
+        fi
+        after_key_pos="$JSON_PARSE_NEXT_INDEX"
+        if [[ "$JSON_PARSE_VALUE" == "$target_key" ]]; then
+            after_key_pos=$(skip_json_whitespace_without_jq "$input" "$after_key_pos")
+            if [[ "${input:after_key_pos:1}" == ":" ]]; then
+                value_start=$(skip_json_whitespace_without_jq "$input" "$((after_key_pos + 1))")
+                if [[ "${input:value_start:1}" == '"' ]] && parse_json_string_without_jq "$input" "$value_start"; then
+                    printf '%s' "$JSON_PARSE_VALUE"
+                    return 0
+                fi
+            fi
+        fi
+
+        pos="$after_key_pos"
+    done
 
     return 1
 }
