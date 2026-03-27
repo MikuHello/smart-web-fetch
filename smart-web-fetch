@@ -52,6 +52,15 @@ cleanup_tmp_files() {
     TMP_FILES=()
 }
 
+handle_signal_cleanup_and_exit() {
+    cleanup_tmp_files
+    case "$1" in
+        INT) exit 130 ;;
+        TERM) exit 143 ;;
+        *) exit 1 ;;
+    esac
+}
+
 load_rules_from_file() {
     if [[ ! -f "$RULES_FILE" ]]; then
         return 0
@@ -78,7 +87,9 @@ load_rules_from_file() {
     log_info "Loaded thresholds from rules file: $RULES_FILE"
 }
 
-trap cleanup_tmp_files EXIT INT TERM
+trap cleanup_tmp_files EXIT
+trap 'handle_signal_cleanup_and_exit INT' INT
+trap 'handle_signal_cleanup_and_exit TERM' TERM
 
 show_help() {
     cat <<'EOF'
