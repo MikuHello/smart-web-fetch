@@ -18,6 +18,79 @@ JINA_READER_BASE="https://r.jina.ai"
 MARKDOWN_NEW="https://api.markdown.new/api/v1/convert"
 DEFUDDLE_MD="https://defuddle.md/api/convert"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RULES_FILE="$SCRIPT_DIR/docs/fetch-rules.json"
+TMP_FILES=()
+
+
+create_tmp_file() {
+    local tmp
+    tmp=$(mktemp)
+    TMP_FILES+=("$tmp")
+    printf '%s\n' "$tmp"
+}
+
+remove_tmp_file() {
+    local target="$1"
+    local remaining=()
+    rm -f -- "$target"
+
+    for f in "${TMP_FILES[@]}"; do
+        if [[ "$f" != "$target" ]]; then
+            remaining+=("$f")
+        fi
+    done
+
+    TMP_FILES=("${remaining[@]}")
+}
+
+cleanup_tmp_files() {
+    local f
+    for f in "${TMP_FILES[@]}"; do
+        rm -f -- "$f"
+    done
+    TMP_FILES=()
+}
+
+handle_signal_cleanup_and_exit() {
+    cleanup_tmp_files
+    case "$1" in
+        INT) exit 130 ;;
+        TERM) exit 143 ;;
+        *) exit 1 ;;
+    esac
+}
+
+load_rules_from_file() {
+    if [[ ! -f "$RULES_FILE" ]]; then
+        return 0
+    fi
+
+    if ! command -v jq >/dev/null 2>&1; then
+        log_info "Rules file detected but jq is unavailable; using built-in defaults"
+        return 0
+    fi
+
+    local value
+    value=$(jq -r '.thresholds.jina // empty' "$RULES_FILE" 2>/dev/null || true)
+    [[ "$value" =~ ^[0-9]+$ ]] && JINA_MIN_LENGTH="$value"
+
+    value=$(jq -r '.thresholds.markdown_new // empty' "$RULES_FILE" 2>/dev/null || true)
+    [[ "$value" =~ ^[0-9]+$ ]] && MARKDOWN_NEW_MIN_LENGTH="$value"
+
+    value=$(jq -r '.thresholds.defuddle // empty' "$RULES_FILE" 2>/dev/null || true)
+    [[ "$value" =~ ^[0-9]+$ ]] && DEFUDDLE_MIN_LENGTH="$value"
+
+    value=$(jq -r '.thresholds.basic // empty' "$RULES_FILE" 2>/dev/null || true)
+    [[ "$value" =~ ^[0-9]+$ ]] && BASIC_MIN_LENGTH="$value"
+
+    log_info "Loaded thresholds from rules file: $RULES_FILE"
+}
+
+trap cleanup_tmp_files EXIT
+trap 'handle_signal_cleanup_and_exit INT' INT
+trap 'handle_signal_cleanup_and_exit TERM' TERM
+
 show_help() {
     cat <<'EOF'
 Smart Web Fetch - lightweight web-to-Markdown fetcher
@@ -425,8 +498,8 @@ fetch_jina() {
     jina_url=$(build_jina_url "$url")
 
     # 判定策略：仅将 HTTP 非 2xx、结构化错误字段、空/过短响应视为失败，不再按全文关键词匹配。
-    headers_file=$(mktemp)
-    body_file=$(mktemp)
+    headers_file=$(create_tmp_file)
+    body_file=$(create_tmp_file)
     if ! curl -sSL --max-time "$TIMEOUT" \
         -H "User-Agent: SmartWebFetch/1.0" \
         -D "$headers_file" \
@@ -434,12 +507,14 @@ fetch_jina() {
         "$jina_url"; then
         set_last_fetch_error "Jina Reader request failed"
         log_warn "Jina Reader request failed"
-        rm -f "$headers_file" "$body_file"
+        remove_tmp_file "$headers_file"
+    remove_tmp_file "$body_file"
         return 1
     fi
     http_code=$(extract_http_status_code "$headers_file")
     response=$(cat "$body_file")
-    rm -f "$headers_file" "$body_file"
+    remove_tmp_file "$headers_file"
+    remove_tmp_file "$body_file"
 
     if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
         set_last_fetch_error "Jina Reader returned HTTP ${http_code:-unknown}"
@@ -476,8 +551,8 @@ fetch_markdown_new() {
     log_info "Trying markdown.new"
     set_last_fetch_error ""
     payload=$(build_url_json_payload "$url")
-    headers_file=$(mktemp)
-    body_file=$(mktemp)
+    headers_file=$(create_tmp_file)
+    body_file=$(create_tmp_file)
 
     # 判定策略：将 HTTP 非 2xx、结构化错误字段、空/过短响应、以及可识别的 HTML 错误页视为失败。
     if ! curl -sSL --max-time "$TIMEOUT" \
@@ -490,14 +565,16 @@ fetch_markdown_new() {
         "$MARKDOWN_NEW"; then
         set_last_fetch_error "markdown.new request failed"
         log_warn "markdown.new request failed"
-        rm -f "$headers_file" "$body_file"
+        remove_tmp_file "$headers_file"
+    remove_tmp_file "$body_file"
         return 1
     fi
 
     http_code=$(extract_http_status_code "$headers_file")
     content_type=$(extract_content_type "$headers_file")
     response=$(cat "$body_file")
-    rm -f "$headers_file" "$body_file"
+    remove_tmp_file "$headers_file"
+    remove_tmp_file "$body_file"
 
     if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
         set_last_fetch_error "markdown.new returned HTTP ${http_code:-unknown}"
@@ -548,8 +625,8 @@ fetch_defuddle() {
     log_info "Trying defuddle.md"
     set_last_fetch_error ""
     payload=$(build_url_json_payload "$url")
-    headers_file=$(mktemp)
-    body_file=$(mktemp)
+    headers_file=$(create_tmp_file)
+    body_file=$(create_tmp_file)
 
     # 判定策略：将 HTTP 非 2xx、结构化错误字段、空/过短响应、以及可识别的 HTML 错误页视为失败。
     if ! curl -sSL --max-time "$TIMEOUT" \
@@ -562,14 +639,16 @@ fetch_defuddle() {
         "$DEFUDDLE_MD"; then
         set_last_fetch_error "defuddle.md request failed"
         log_warn "defuddle.md request failed"
-        rm -f "$headers_file" "$body_file"
+        remove_tmp_file "$headers_file"
+    remove_tmp_file "$body_file"
         return 1
     fi
 
     http_code=$(extract_http_status_code "$headers_file")
     content_type=$(extract_content_type "$headers_file")
     response=$(cat "$body_file")
-    rm -f "$headers_file" "$body_file"
+    remove_tmp_file "$headers_file"
+    remove_tmp_file "$body_file"
 
     if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
         set_last_fetch_error "defuddle.md returned HTTP ${http_code:-unknown}"
@@ -609,8 +688,8 @@ fetch_basic() {
 
     log_info "Trying direct curl fallback"
     set_last_fetch_error ""
-    headers_file=$(mktemp)
-    body_file=$(mktemp)
+    headers_file=$(create_tmp_file)
+    body_file=$(create_tmp_file)
 
     if ! curl -sSL --max-time "$TIMEOUT" \
         -H "User-Agent: Mozilla/5.0" \
@@ -620,12 +699,14 @@ fetch_basic() {
         "$url"; then
         set_last_fetch_error "Direct curl fallback request failed"
         log_warn "Direct curl fallback failed"
-        rm -f "$headers_file" "$body_file"
+        remove_tmp_file "$headers_file"
+    remove_tmp_file "$body_file"
         return 1
     fi
     http_code=$(extract_http_status_code "$headers_file")
     response=$(cat "$body_file")
-    rm -f "$headers_file" "$body_file"
+    remove_tmp_file "$headers_file"
+    remove_tmp_file "$body_file"
 
     if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
         set_last_fetch_error "Direct curl fallback returned HTTP ${http_code:-unknown}"
@@ -775,6 +856,7 @@ if [[ -z "$URL" ]]; then
 fi
 
 check_runtime_dependencies
+load_rules_from_file
 
 if [[ -n "$OUTPUT" ]]; then
     OUTPUT_DIR=$(dirname "$OUTPUT")
@@ -788,12 +870,14 @@ if [[ -n "$OUTPUT" ]]; then
     fi
 
     TMP_OUTPUT=$(mktemp "$OUTPUT_DIR/.${OUTPUT_BASENAME}.tmp.XXXXXX")
+    TMP_FILES+=("$TMP_OUTPUT")
 
     if smart_fetch "$URL" "$SERVICE" > "$TMP_OUTPUT"; then
         mv "$TMP_OUTPUT" "$OUTPUT"
+        remove_tmp_file "$TMP_OUTPUT"
         log_success "Saved output to: $OUTPUT"
     else
-        rm -f "$TMP_OUTPUT"
+        remove_tmp_file "$TMP_OUTPUT"
         exit 1
     fi
 else

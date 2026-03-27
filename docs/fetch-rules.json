@@ -1,0 +1,32 @@
+{
+  "providers": ["jina", "markdown", "defuddle", "basic"],
+  "thresholds": {
+    "jina": 100,
+    "markdown_new": 40,
+    "defuddle": 40,
+    "basic": 40
+  },
+  "structured_error_keywords": [
+    "error",
+    "fail",
+    "invalid",
+    "unauthorized",
+    "forbidden",
+    "denied",
+    "blocked",
+    "not found",
+    "rate limit",
+    "too many requests"
+  ],
+  "html_error_keywords": [
+    "access denied",
+    "forbidden",
+    "captcha",
+    "cloudflare",
+    "just a moment",
+    "unauthorized",
+    "bad gateway",
+    "gateway timeout",
+    "service unavailable"
+  ]
+}
