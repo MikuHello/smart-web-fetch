@@ -23,6 +23,7 @@ $DefuddleMd = 'https://defuddle.md/api/convert'
 $JinaMinLength = 100
 $MarkdownNewMinLength = 40
 $DefuddleMinLength = 40
+$BasicMinLength = 40
 $script:LastFetchError = $null
 
 function Show-Help {
@@ -495,7 +496,7 @@ function Fetch-Basic([string]$TargetUrl) {
             return $null
         }
 
-        if ([string]::IsNullOrWhiteSpace($response) -or $response.Length -lt 40) {
+        if ([string]::IsNullOrWhiteSpace($response) -or $response.Length -lt $BasicMinLength) {
             Set-LastFetchError 'Basic fallback returned invalid or incomplete content'
             Write-WarnLog $script:LastFetchError
             return $null
@@ -506,7 +507,20 @@ function Fetch-Basic([string]$TargetUrl) {
             $processed = Clean-Html $processed
         }
 
+        if ([string]::IsNullOrWhiteSpace($processed) -or $processed.Length -lt $BasicMinLength) {
+            Set-LastFetchError 'Basic fallback returned invalid or incomplete content after cleanup'
+            Write-WarnLog $script:LastFetchError
+            return $null
+        }
+
         $result = Convert-HtmlFallback $processed
+
+        if ([string]::IsNullOrWhiteSpace($result) -or $result.Length -lt $BasicMinLength) {
+            Set-LastFetchError 'Basic fallback returned invalid or incomplete content after conversion'
+            Write-WarnLog $script:LastFetchError
+            return $null
+        }
+
         Write-Success 'Basic fallback succeeded'
         return $result
     } catch {

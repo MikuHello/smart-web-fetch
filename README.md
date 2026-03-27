@@ -217,6 +217,18 @@ smart-web-fetch https://example.com https://openai.com
 - 对所有路径统一要求 HTTP 2xx（包含基础 fallback）。
 - `markdown.new` / `defuddle` 除结构化错误判定外，还会识别典型 HTML 错误页（例如 Access Denied/CAPTCHA/网关错误）并按失败处理。
 
+## Bash / PowerShell 一致性说明
+
+`smart-web-fetch`（Bash）与 `smart-web-fetch.ps1`（PowerShell）遵循同一抓取判定契约，包括：
+
+- provider 顺序与 forced service 行为
+- HTTP 2xx 与最小长度阈值判定
+- 结构化错误字段识别规则
+- `markdown.new` / `defuddle` 的 HTML 错误页识别
+- basic fallback 的分阶段校验（拉取后 / 清洗后 / 转换后）
+
+详细规则见：`docs/fetch-contract.md`。
+
 ## 说明
 
 ## Jina 入参拼接规则（Bash 与 PowerShell 一致）
