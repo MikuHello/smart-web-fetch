@@ -447,25 +447,32 @@ function Fetch-MarkdownNew([string]$TargetUrl) {
             return $null
         }
 
-        $markdown = Try-ExtractMarkdownWithJq $response
-        if (-not [string]::IsNullOrWhiteSpace($markdown)) {
-            Write-Success 'markdown.new succeeded'
-            return [string]$markdown
-        }
-
+        $parsedJson = $null
+        $isJsonResponse = $false
         try {
-            $json = $response | ConvertFrom-Json
-            $markdown = $json.markdown
-            if ([string]::IsNullOrWhiteSpace($markdown)) { $markdown = $json.content }
-            if ([string]::IsNullOrWhiteSpace($markdown)) { $markdown = $json.data }
-            if (-not [string]::IsNullOrWhiteSpace($markdown)) {
-                Write-Success 'markdown.new succeeded'
-                return [string]$markdown
-            }
+            $parsedJson = $response | ConvertFrom-Json -ErrorAction Stop
+            $isJsonResponse = $true
         } catch {
         }
 
+        $markdown = Try-ExtractMarkdownWithJq $response
+        if ([string]::IsNullOrWhiteSpace($markdown) -and $isJsonResponse) {
+            $markdown = $parsedJson.markdown
+            if ([string]::IsNullOrWhiteSpace($markdown)) { $markdown = $parsedJson.content }
+            if ([string]::IsNullOrWhiteSpace($markdown)) { $markdown = $parsedJson.data }
+        }
+
+        if ($isJsonResponse -and [string]::IsNullOrWhiteSpace($markdown)) {
+            Set-LastFetchError 'markdown.new returned JSON without usable markdown/content/data'
+            Write-WarnLog $script:LastFetchError
+            return $null
+        }
+
         Write-Success 'markdown.new succeeded'
+        if (-not [string]::IsNullOrWhiteSpace($markdown)) {
+            return [string]$markdown
+        }
+
         return $response
     } catch {
         Set-LastFetchError "markdown.new request failed: $(Get-RequestFailureSummary $_)"

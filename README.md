@@ -216,6 +216,7 @@ smart-web-fetch https://example.com https://openai.com
 补充判定规则（Bash 与 PowerShell 一致）：
 - 对所有路径统一要求 HTTP 2xx（包含基础 fallback）。
 - `markdown.new` / `defuddle` 除结构化错误判定外，还会识别典型 HTML 错误页（例如 Access Denied/CAPTCHA/网关错误）并按失败处理。
+- 对 `markdown.new`：若响应是 JSON 但无法提取 `markdown` / `content` / `data` 正文，会按失败处理并继续降级（不再把原始 JSON 当作成功正文输出）。
 
 ## 规则文件与离线回归
 
@@ -230,6 +231,7 @@ smart-web-fetch https://example.com https://openai.com
 - provider 顺序与 forced service 行为
 - HTTP 2xx 与最小长度阈值判定
 - 结构化错误字段识别规则
+- `markdown.new` JSON 正文字段校验（`markdown` / `content` / `data`）
 - `markdown.new` / `defuddle` 的 HTML 错误页识别
 - basic fallback 的分阶段校验（拉取后 / 清洗后 / 转换后）
 - 自动降级全部失败时包含最后一次失败原因（便于排障）
