@@ -253,15 +253,19 @@ clean_html() {
         # sed 分支做轻量块级清洗与属性清洗：
         # 1) 删除常见噪音块（script/style/noscript/nav/header/footer/aside）与注释
         # 2) 删除 class/id/style/on* 属性（单双引号）
+        #
+        # 注意：不要使用 `/<start>/,/<end>/d` 这种按行范围删除。
+        # 对于单行/压缩 HTML，它会删除整行，连同真实正文一起被抹掉。
+        # 这里改为“匹配即替换为空”，仅移除标签块本身，保留同一行其他内容。
         sed \
-            -e '/<script[[:space:]>]/,/<\/script>/d' \
-            -e '/<style[[:space:]>]/,/<\/style>/d' \
-            -e '/<noscript[[:space:]>]/,/<\/noscript>/d' \
-            -e '/<nav[[:space:]>]/,/<\/nav>/d' \
-            -e '/<header[[:space:]>]/,/<\/header>/d' \
-            -e '/<footer[[:space:]>]/,/<\/footer>/d' \
-            -e '/<aside[[:space:]>]/,/<\/aside>/d' \
-            -e '/<!--/,/-->/d' \
+            -e 's#<script[[:space:]>][^<]*</script>##g' \
+            -e 's#<style[[:space:]>][^<]*</style>##g' \
+            -e 's#<noscript[[:space:]>][^<]*</noscript>##g' \
+            -e 's#<nav[[:space:]>][^<]*</nav>##g' \
+            -e 's#<header[[:space:]>][^<]*</header>##g' \
+            -e 's#<footer[[:space:]>][^<]*</footer>##g' \
+            -e 's#<aside[[:space:]>][^<]*</aside>##g' \
+            -e 's#<!--[^>]*-->##g' \
             -e 's/class="[^"]*"//g' \
             -e 's/class='"'"'[^'"'"']*'"'"'//g' \
             -e 's/id="[^"]*"//g' \
