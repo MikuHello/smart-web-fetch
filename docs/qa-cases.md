@@ -7,6 +7,7 @@ This file maps lightweight offline fixtures to `docs/fetch-contract.md` rules so
 - `fixtures/markdown-success.json`
   - Expected: pass as non-empty, threshold-compliant structured response.
   - Contract refs: section 3 (success criteria).
+  - Note: for Bash, this case should still pass for `markdown.new` when `jq` is unavailable (via built-in fallback extraction).
 
 - `fixtures/structured-error.json`
   - Expected: fail as structured error payload.
