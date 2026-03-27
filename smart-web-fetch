@@ -175,12 +175,12 @@ is_structured_error_response() {
                 .error as $error
                 | .message as $message
                 | (
-                    ($error != null and (
-                        ($error | type == "boolean" and $error == true)
-                        or ($error | type == "string" and ($error | test("(?i)error|fail|invalid|unauthorized|forbidden|not found")))
-                    ))
-                    or
-                    ($message != null and ($message | type == "string" and ($message | test("(?i)error|fail|invalid|unauthorized|forbidden|not found"))))
+                        ($error != null and (
+                            ($error | type == "boolean" and $error == true)
+                            or ($error | type == "string" and ($error | test("(?i)error|fail|invalid|unauthorized|forbidden|denied|blocked|not found|rate limit|too many requests")))
+                        ))
+                        or
+                        ($message != null and ($message | type == "string" and ($message | test("(?i)error|fail|invalid|unauthorized|forbidden|denied|blocked|not found|rate limit|too many requests"))))
                 )
             else
                 false
@@ -253,9 +253,89 @@ clean_html() {
         perl -0pe 's{<script\b[^>]*>.*?</script>}{}gsi; s{<style\b[^>]*>.*?</style>}{}gsi; s{<noscript\b[^>]*>.*?</noscript>}{}gsi; s{<nav\b[^>]*>.*?</nav>}{}gsi; s{<header\b[^>]*>.*?</header>}{}gsi; s{<footer\b[^>]*>.*?</footer>}{}gsi; s{<aside\b[^>]*>.*?</aside>}{}gsi; s{<!--.*?-->}{}gsi; s{\s(?:class|id|style|on\w+)=("[^"]*"|'"'"'[^'"'"']*'"'"')}{}gsi;'
     else
         # 无 perl 时做保守清洗：
-        # 1) 删除噪音标签片段（尽量不丢弃同一行的非标签正文）
-        # 2) 继续执行属性清洗（class/id/style/on*）
-        sed \
+        # 1) 先去除跨行噪音块，同时保留同一行中的非标签正文
+        # 2) 再删除同一行内残留的噪音标签片段
+        # 3) 继续执行属性清洗（class/id/style/on*）
+        awk '
+            BEGIN {
+                IGNORECASE = 1
+                in_comment = 0
+                in_block = ""
+            }
+
+            function trim_closed_block(line, close_pat,    pos) {
+                pos = match(line, close_pat)
+                if (pos) {
+                    return substr(line, pos + RLENGTH)
+                }
+                return ""
+            }
+
+            function remove_tag_pairs(line, tag,    open_pat, close_pat, pos, prefix, rest, close_pos) {
+                open_pat = "<" tag "([[:space:]][^>]*)?>"
+                close_pat = "</" tag "[[:space:]]*>"
+
+                while ((pos = match(line, open_pat))) {
+                    prefix = substr(line, 1, pos - 1)
+                    rest = substr(line, pos + RLENGTH)
+                    close_pos = match(rest, close_pat)
+
+                    if (close_pos) {
+                        line = prefix substr(rest, close_pos + RLENGTH)
+                    } else {
+                        in_block = tag
+                        line = prefix
+                        break
+                    }
+                }
+
+                return line
+            }
+
+            {
+                line = $0
+
+                if (in_comment) {
+                    line = trim_closed_block(line, "-->")
+                    if (line == "") {
+                        next
+                    }
+                    in_comment = 0
+                }
+
+                if (in_block != "") {
+                    line = trim_closed_block(line, "</" in_block "[[:space:]]*>")
+                    if (line == "") {
+                        next
+                    }
+                    in_block = ""
+                }
+
+                while (match(line, "<!--")) {
+                    prefix = substr(line, 1, RSTART - 1)
+                    rest = substr(line, RSTART + RLENGTH)
+                    if (match(rest, "-->")) {
+                        line = prefix substr(rest, RSTART + RLENGTH)
+                    } else {
+                        line = prefix
+                        in_comment = 1
+                        break
+                    }
+                }
+
+                line = remove_tag_pairs(line, "script")
+                line = remove_tag_pairs(line, "style")
+                line = remove_tag_pairs(line, "noscript")
+                line = remove_tag_pairs(line, "nav")
+                line = remove_tag_pairs(line, "header")
+                line = remove_tag_pairs(line, "footer")
+                line = remove_tag_pairs(line, "aside")
+
+                if (line != "" || (!in_comment && in_block == "")) {
+                    print line
+                }
+            }
+        ' | sed \
             -e 's#<script[^>]*>[^<]*</script>##gI' \
             -e 's#<style[^>]*>[^<]*</style>##gI' \
             -e 's#<noscript[^>]*>[^<]*</noscript>##gI' \
