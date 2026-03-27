@@ -154,10 +154,12 @@ build_jina_url() {
     local scheme="http"
     local url_without_scheme="$target_url"
 
-    if [[ "$target_url" =~ ^(https?)://(.*)$ ]]; then
+    if [[ "$target_url" =~ ^([Hh][Tt][Tt][Pp][Ss]?)://(.*)$ ]]; then
         scheme="${BASH_REMATCH[1]}"
         url_without_scheme="${BASH_REMATCH[2]}"
     fi
+
+    scheme=$(printf '%s' "$scheme" | tr '[:upper:]' '[:lower:]')
 
     printf '%s/%s://%s\n' "$JINA_READER_BASE" "$scheme" "$url_without_scheme"
 }
@@ -201,7 +203,7 @@ is_structured_error_response() {
         return 0
     fi
 
-    if [[ "$lowered_response" =~ \"(error|message)\":\"[^\"]*(error|fail|invalid|unauthorized|forbidden|not[[:space:]_-]?found)[^\"]*\" ]]; then
+    if [[ "$lowered_response" =~ \"(error|message)\":\"[^\"]*(error|fail|invalid|unauthorized|forbidden|denied|blocked|not[[:space:]_-]?found|rate[[:space:]_-]?limit|too[[:space:]_-]?many[[:space:]_-]?requests)[^\"]*\" ]]; then
         return 0
     fi
 
@@ -250,30 +252,33 @@ clean_html() {
     if command -v perl >/dev/null 2>&1; then
         perl -0pe 's{<script\b[^>]*>.*?</script>}{}gsi; s{<style\b[^>]*>.*?</style>}{}gsi; s{<noscript\b[^>]*>.*?</noscript>}{}gsi; s{<nav\b[^>]*>.*?</nav>}{}gsi; s{<header\b[^>]*>.*?</header>}{}gsi; s{<footer\b[^>]*>.*?</footer>}{}gsi; s{<aside\b[^>]*>.*?</aside>}{}gsi; s{<!--.*?-->}{}gsi; s{\s(?:class|id|style|on\w+)=("[^"]*"|'"'"'[^'"'"']*'"'"')}{}gsi;'
     else
-        # sed 分支做轻量块级清洗与属性清洗：
-        # 1) 删除常见噪音块（script/style/noscript/nav/header/footer/aside）与注释
-        # 2) 删除 class/id/style/on* 属性（单双引号）
-        #
-        # 注意：不要使用 `/<start>/,/<end>/d` 这种按行范围删除。
-        # 对于单行/压缩 HTML，它会删除整行，连同真实正文一起被抹掉。
-        # 这里改为“匹配即替换为空”，仅移除标签块本身，保留同一行其他内容。
+        # 无 perl 时做保守清洗：
+        # 1) 按行丢弃包含噪音标签开/闭标记的行（避免 `<tag>...<` 模式漏清洗）
+        # 2) 继续执行属性清洗（class/id/style/on*）
         sed \
-            -e 's#<script[[:space:]>][^<]*</script>##g' \
-            -e 's#<style[[:space:]>][^<]*</style>##g' \
-            -e 's#<noscript[[:space:]>][^<]*</noscript>##g' \
-            -e 's#<nav[[:space:]>][^<]*</nav>##g' \
-            -e 's#<header[[:space:]>][^<]*</header>##g' \
-            -e 's#<footer[[:space:]>][^<]*</footer>##g' \
-            -e 's#<aside[[:space:]>][^<]*</aside>##g' \
+            -e '/<script[[:space:]>]/I d' \
+            -e '/<\/script>/I d' \
+            -e '/<style[[:space:]>]/I d' \
+            -e '/<\/style>/I d' \
+            -e '/<noscript[[:space:]>]/I d' \
+            -e '/<\/noscript>/I d' \
+            -e '/<nav[[:space:]>]/I d' \
+            -e '/<\/nav>/I d' \
+            -e '/<header[[:space:]>]/I d' \
+            -e '/<\/header>/I d' \
+            -e '/<footer[[:space:]>]/I d' \
+            -e '/<\/footer>/I d' \
+            -e '/<aside[[:space:]>]/I d' \
+            -e '/<\/aside>/I d' \
             -e 's#<!--[^>]*-->##g' \
-            -e 's/class="[^"]*"//g' \
-            -e 's/class='"'"'[^'"'"']*'"'"'//g' \
-            -e 's/id="[^"]*"//g' \
-            -e 's/id='"'"'[^'"'"']*'"'"'//g' \
-            -e 's/style="[^"]*"//g' \
-            -e 's/style='"'"'[^'"'"']*'"'"'//g' \
-            -e 's/on[a-zA-Z0-9_]*="[^"]*"//g' \
-            -e 's/on[a-zA-Z0-9_]*='"'"'[^'"'"']*'"'"'//g'
+            -e 's/class="[^"]*"//gI' \
+            -e "s/class='[^']*'//gI" \
+            -e 's/id="[^"]*"//gI' \
+            -e "s/id='[^']*'//gI" \
+            -e 's/style="[^"]*"//gI' \
+            -e "s/style='[^']*'//gI" \
+            -e 's/on[a-zA-Z0-9_]*="[^"]*"//gI' \
+            -e "s/on[a-zA-Z0-9_]*='[^']*'//gI"
     fi
 }
 
@@ -592,7 +597,7 @@ smart_fetch() {
         return 1
     fi
 
-    if [[ ! "$url" =~ ^https?:// ]]; then
+    if [[ ! "$url" =~ ^[Hh][Tt][Tt][Pp][Ss]?:// ]]; then
         url="https://$url"
         log_info "Added https:// prefix: $url"
     fi
