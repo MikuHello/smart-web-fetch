@@ -62,6 +62,10 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
+set_last_fetch_error() {
+    LAST_FETCH_ERROR="$1"
+}
+
 log_dep_status() {
     local level="$1"
     local message="$2"
@@ -312,34 +316,46 @@ fetch_jina() {
     local url="$1"
     local response
     local http_code
+    local headers_file=""
+    local body_file=""
 
     log_info "Trying Jina Reader"
+    set_last_fetch_error ""
 
     local jina_url
     jina_url=$(build_jina_url "$url")
 
     # 判定策略：仅将 HTTP 非 2xx、结构化错误字段、空/过短响应视为失败，不再按全文关键词匹配。
-    if ! response=$(curl -sL --max-time "$TIMEOUT" \
+    headers_file=$(mktemp)
+    body_file=$(mktemp)
+    if ! curl -sSL --max-time "$TIMEOUT" \
         -H "User-Agent: SmartWebFetch/1.0" \
-        -w $'\n%{http_code}' \
-        "$jina_url" 2>&1); then
+        -D "$headers_file" \
+        -o "$body_file" \
+        "$jina_url"; then
+        set_last_fetch_error "Jina Reader request failed"
         log_warn "Jina Reader request failed"
+        rm -f "$headers_file" "$body_file"
         return 1
     fi
-    http_code="${response##*$'\n'}"
-    response="${response%$'\n'*}"
+    http_code=$(extract_http_status_code "$headers_file")
+    response=$(cat "$body_file")
+    rm -f "$headers_file" "$body_file"
 
     if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+        set_last_fetch_error "Jina Reader returned HTTP ${http_code:-unknown}"
         log_warn "Jina Reader returned HTTP ${http_code:-unknown}"
         return 1
     fi
 
     if is_structured_error_response "$response"; then
+        set_last_fetch_error "Jina Reader returned structured error payload"
         log_warn "Jina Reader returned structured error payload"
         return 1
     fi
 
     if [[ -z "$response" ]] || [[ ${#response} -lt "$JINA_MIN_LENGTH" ]]; then
+        set_last_fetch_error "Jina Reader returned empty or too-short content"
         log_warn "Jina Reader returned empty or too-short content"
         return 1
     fi
@@ -359,6 +375,7 @@ fetch_markdown_new() {
     local body_file=""
 
     log_info "Trying markdown.new"
+    set_last_fetch_error ""
     payload=$(build_url_json_payload "$url")
     headers_file=$(mktemp)
     body_file=$(mktemp)
@@ -372,6 +389,7 @@ fetch_markdown_new() {
         -D "$headers_file" \
         -o "$body_file" \
         "$MARKDOWN_NEW"; then
+        set_last_fetch_error "markdown.new request failed"
         log_warn "markdown.new request failed"
         rm -f "$headers_file" "$body_file"
         return 1
@@ -383,21 +401,25 @@ fetch_markdown_new() {
     rm -f "$headers_file" "$body_file"
 
     if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+        set_last_fetch_error "markdown.new returned HTTP ${http_code:-unknown}"
         log_warn "markdown.new returned HTTP ${http_code:-unknown}"
         return 1
     fi
 
     if is_likely_html_error_payload "$response" "$content_type"; then
+        set_last_fetch_error "markdown.new returned HTML error page (content-type: ${content_type:-unknown})"
         log_warn "markdown.new returned HTML error page (content-type: ${content_type:-unknown})"
         return 1
     fi
 
     if is_structured_error_response "$response"; then
+        set_last_fetch_error "markdown.new returned structured error payload"
         log_warn "markdown.new returned structured error payload"
         return 1
     fi
 
     if [[ -z "$response" ]] || [[ ${#response} -lt "$MARKDOWN_NEW_MIN_LENGTH" ]]; then
+        set_last_fetch_error "markdown.new returned empty or too-short content"
         log_warn "markdown.new returned empty or too-short content"
         return 1
     fi
@@ -425,6 +447,7 @@ fetch_defuddle() {
     local body_file=""
 
     log_info "Trying defuddle.md"
+    set_last_fetch_error ""
     payload=$(build_url_json_payload "$url")
     headers_file=$(mktemp)
     body_file=$(mktemp)
@@ -438,6 +461,7 @@ fetch_defuddle() {
         -D "$headers_file" \
         -o "$body_file" \
         "$DEFUDDLE_MD"; then
+        set_last_fetch_error "defuddle.md request failed"
         log_warn "defuddle.md request failed"
         rm -f "$headers_file" "$body_file"
         return 1
@@ -449,21 +473,25 @@ fetch_defuddle() {
     rm -f "$headers_file" "$body_file"
 
     if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+        set_last_fetch_error "defuddle.md returned HTTP ${http_code:-unknown}"
         log_warn "defuddle.md returned HTTP ${http_code:-unknown}"
         return 1
     fi
 
     if is_likely_html_error_payload "$response" "$content_type"; then
+        set_last_fetch_error "defuddle.md returned HTML error page (content-type: ${content_type:-unknown})"
         log_warn "defuddle.md returned HTML error page (content-type: ${content_type:-unknown})"
         return 1
     fi
 
     if is_structured_error_response "$response"; then
+        set_last_fetch_error "defuddle.md returned structured error payload"
         log_warn "defuddle.md returned structured error payload"
         return 1
     fi
 
     if [[ -z "$response" ]] || [[ ${#response} -lt "$DEFUDDLE_MIN_LENGTH" ]]; then
+        set_last_fetch_error "defuddle.md returned empty or too-short content"
         log_warn "defuddle.md returned empty or too-short content"
         return 1
     fi
@@ -481,6 +509,7 @@ fetch_basic() {
     local body_file
 
     log_info "Trying direct curl fallback"
+    set_last_fetch_error ""
     headers_file=$(mktemp)
     body_file=$(mktemp)
 
@@ -490,6 +519,7 @@ fetch_basic() {
         -D "$headers_file" \
         -o "$body_file" \
         "$url"; then
+        set_last_fetch_error "Direct curl fallback request failed"
         log_warn "Direct curl fallback failed"
         rm -f "$headers_file" "$body_file"
         return 1
@@ -499,11 +529,13 @@ fetch_basic() {
     rm -f "$headers_file" "$body_file"
 
     if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+        set_last_fetch_error "Direct curl fallback returned HTTP ${http_code:-unknown}"
         log_warn "Direct curl fallback returned HTTP ${http_code:-unknown}"
         return 1
     fi
 
     if [[ -z "$response" ]] || [[ ${#response} -lt "$BASIC_MIN_LENGTH" ]]; then
+        set_last_fetch_error "Direct curl fallback returned empty or too-short content before cleanup"
         log_warn "Direct curl fallback returned empty or too-short content"
         return 1
     fi
@@ -514,14 +546,25 @@ fetch_basic() {
         processed_response=$(printf '%s' "$response" | clean_html)
     fi
 
-    if command -v html2text >/dev/null 2>&1; then
-        printf '%s' "$processed_response" | html2text -utf8 2>/dev/null || printf '%s\n' "$processed_response"
-    elif command -v lynx >/dev/null 2>&1; then
-        printf '%s' "$processed_response" | lynx -stdin -dump -nolist 2>/dev/null || printf '%s\n' "$processed_response"
-    else
-        printf '%s\n' "$processed_response"
+    if [[ -z "$processed_response" ]] || [[ ${#processed_response} -lt "$BASIC_MIN_LENGTH" ]]; then
+        set_last_fetch_error "Direct curl fallback returned empty or too-short content after cleanup"
+        log_warn "Direct curl fallback returned empty or too-short content after cleanup"
+        return 1
     fi
 
+    if command -v html2text >/dev/null 2>&1; then
+        processed_response=$(printf '%s' "$processed_response" | html2text -utf8 2>/dev/null || printf '%s\n' "$processed_response")
+    elif command -v lynx >/dev/null 2>&1; then
+        processed_response=$(printf '%s' "$processed_response" | lynx -stdin -dump -nolist 2>/dev/null || printf '%s\n' "$processed_response")
+    fi
+
+    if [[ -z "$processed_response" ]] || [[ ${#processed_response} -lt "$BASIC_MIN_LENGTH" ]]; then
+        set_last_fetch_error "Direct curl fallback returned empty or too-short content after conversion"
+        log_warn "Direct curl fallback returned empty or too-short content after conversion"
+        return 1
+    fi
+
+    printf '%s\n' "$processed_response"
     log_success "Direct curl fallback succeeded"
 }
 
@@ -558,7 +601,11 @@ smart_fetch() {
                 ;;
         esac
 
-        log_error "Forced service failed: ${specified_service}"
+        if [[ -n "$LAST_FETCH_ERROR" ]]; then
+            log_error "Forced service failed: ${specified_service}. ${LAST_FETCH_ERROR}"
+        else
+            log_error "Forced service failed: ${specified_service}"
+        fi
         return 1
     fi
 
@@ -576,6 +623,7 @@ OUTPUT=""
 SERVICE=""
 VERBOSE="0"
 NO_CLEAN="0"
+LAST_FETCH_ERROR=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
