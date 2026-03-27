@@ -331,34 +331,15 @@ clean_html() {
                 line = remove_tag_pairs(line, "footer")
                 line = remove_tag_pairs(line, "aside")
 
+                gsub(/<\/?(script|style|noscript|nav|header|footer|aside)([[:space:]][^>]*)?>/, "", line)
+                gsub(/<!--[^>]*-->/, "", line)
+                gsub(/[[:space:]]+(class|id|style|on[[:alnum:]_]+)=("[^"]*"|'\''[^'\'']*'\'')/, "", line)
+
                 if (line != "" || (!in_comment && in_block == "")) {
                     print line
                 }
             }
-        ' | sed \
-            -e 's#<script[^>]*>[^<]*</script>##gI' \
-            -e 's#<style[^>]*>[^<]*</style>##gI' \
-            -e 's#<noscript[^>]*>[^<]*</noscript>##gI' \
-            -e 's#<nav[^>]*>[^<]*</nav>##gI' \
-            -e 's#<header[^>]*>[^<]*</header>##gI' \
-            -e 's#<footer[^>]*>[^<]*</footer>##gI' \
-            -e 's#<aside[^>]*>[^<]*</aside>##gI' \
-            -e 's#</\?script[^>]*>##gI' \
-            -e 's#</\?style[^>]*>##gI' \
-            -e 's#</\?noscript[^>]*>##gI' \
-            -e 's#</\?nav[^>]*>##gI' \
-            -e 's#</\?header[^>]*>##gI' \
-            -e 's#</\?footer[^>]*>##gI' \
-            -e 's#</\?aside[^>]*>##gI' \
-            -e 's#<!--[^>]*-->##g' \
-            -e 's/class="[^"]*"//gI' \
-            -e "s/class='[^']*'//gI" \
-            -e 's/id="[^"]*"//gI' \
-            -e "s/id='[^']*'//gI" \
-            -e 's/style="[^"]*"//gI' \
-            -e "s/style='[^']*'//gI" \
-            -e 's/on[a-zA-Z0-9_]*="[^"]*"//gI' \
-            -e "s/on[a-zA-Z0-9_]*='[^']*'//gI"
+        '
     fi
 }
 
@@ -523,8 +504,22 @@ fetch_markdown_new() {
         return 1
     fi
 
+    local compact_response=""
+    local is_json_object="0"
+
+    compact_response=$(printf '%s' "$response" | tr -d '[:space:]')
+    if [[ "$compact_response" =~ ^\{ ]]; then
+        is_json_object="1"
+    fi
+
     if command -v jq >/dev/null 2>&1; then
         markdown=$(printf '%s' "$response" | jq -r '.markdown // .content // .data // empty' 2>/dev/null || true)
+    fi
+
+    if [[ "$is_json_object" == "1" ]] && ([[ -z "$markdown" ]] || [[ "$markdown" == "null" ]]); then
+        set_last_fetch_error "markdown.new returned JSON without usable markdown/content/data"
+        log_warn "markdown.new returned JSON without usable markdown/content/data"
+        return 1
     fi
 
     log_success "markdown.new succeeded"
