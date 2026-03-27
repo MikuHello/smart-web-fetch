@@ -250,8 +250,22 @@ clean_html() {
     if command -v perl >/dev/null 2>&1; then
         perl -0pe 's{<script\b[^>]*>.*?</script>}{}gsi; s{<style\b[^>]*>.*?</style>}{}gsi; s{<noscript\b[^>]*>.*?</noscript>}{}gsi; s{<nav\b[^>]*>.*?</nav>}{}gsi; s{<header\b[^>]*>.*?</header>}{}gsi; s{<footer\b[^>]*>.*?</footer>}{}gsi; s{<aside\b[^>]*>.*?</aside>}{}gsi; s{<!--.*?-->}{}gsi; s{\s(?:class|id|style|on\w+)=("[^"]*"|'"'"'[^'"'"']*'"'"')}{}gsi;'
     else
-        # sed 分支仅做基础清洗：支持移除 class/id/style/on* 属性的双引号与单引号赋值（如 class="..."、class='...'、onload="..."、onload='...'）。
+        # sed 分支做轻量块级清洗与属性清洗：
+        # 1) 删除常见噪音块（script/style/noscript/nav/header/footer/aside）与注释
+        # 2) 删除 class/id/style/on* 属性（单双引号）
+        #
+        # 注意：不要使用 `/<start>/,/<end>/d` 这种按行范围删除。
+        # 对于单行/压缩 HTML，它会删除整行，连同真实正文一起被抹掉。
+        # 这里改为“匹配即替换为空”，仅移除标签块本身，保留同一行其他内容。
         sed \
+            -e 's#<script[[:space:]>][^<]*</script>##g' \
+            -e 's#<style[[:space:]>][^<]*</style>##g' \
+            -e 's#<noscript[[:space:]>][^<]*</noscript>##g' \
+            -e 's#<nav[[:space:]>][^<]*</nav>##g' \
+            -e 's#<header[[:space:]>][^<]*</header>##g' \
+            -e 's#<footer[[:space:]>][^<]*</footer>##g' \
+            -e 's#<aside[[:space:]>][^<]*</aside>##g' \
+            -e 's#<!--[^>]*-->##g' \
             -e 's/class="[^"]*"//g' \
             -e 's/class='"'"'[^'"'"']*'"'"'//g' \
             -e 's/id="[^"]*"//g' \
@@ -614,7 +628,11 @@ smart_fetch() {
     result=$(fetch_defuddle "$url") && { printf '%s\n' "$result"; return 0; }
     result=$(fetch_basic "$url") && { printf '%s\n' "$result"; return 0; }
 
-    log_error "All fetch methods failed"
+    if [[ -n "$LAST_FETCH_ERROR" ]]; then
+        log_error "All fetch methods failed. Last error: ${LAST_FETCH_ERROR}"
+    else
+        log_error "All fetch methods failed"
+    fi
     return 1
 }
 
