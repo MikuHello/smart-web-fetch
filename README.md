@@ -57,7 +57,7 @@
 | --- | --- | --- | --- |
 | `smart-web-fetch` (Bash) | `curl` | 必需 | 缺失时立即报错并退出 |
 | `smart-web-fetch` (Bash) | `jq` | 可选 | 缺失时仅提示（verbose 下），继续运行并回退 |
-| `smart-web-fetch` (Bash) | `perl` | 可选 | 缺失时仅提示（verbose 下），继续运行并回退到 `sed` 清洗 |
+| `smart-web-fetch` (Bash) | `perl` | 可选 | 缺失时仅提示（verbose 下），继续运行并回退到 `sed` 轻量块级 + 属性清洗 |
 | `smart-web-fetch` (Bash) | `html2text` / `lynx` | 可选 | 两者都缺失时仅提示（verbose 下），继续运行并输出清洗后的 HTML |
 | `smart-web-fetch.ps1` (PowerShell) | PowerShell 7+ | 必需 | 版本不足时立即报错并退出 |
 | `smart-web-fetch.ps1` (PowerShell) | `Invoke-WebRequest` | 必需 | 不可用时立即报错并退出 |
@@ -226,6 +226,7 @@ smart-web-fetch https://example.com https://openai.com
 - 结构化错误字段识别规则
 - `markdown.new` / `defuddle` 的 HTML 错误页识别
 - basic fallback 的分阶段校验（拉取后 / 清洗后 / 转换后）
+- 自动降级全部失败时包含最后一次失败原因（便于排障）
 
 详细规则见：`docs/fetch-contract.md`。
 

@@ -55,6 +55,9 @@ basic fallback 需按阶段校验：
 
 任一阶段失败均应返回失败并设置可追踪错误信息。
 
+实现约束补充：
+- 当 `perl` 不可用时，Bash 路径仍需至少执行轻量块级清洗（如 `script/style/noscript/nav/header/footer/aside` 与注释）以及属性清洗（如 `class/id/style/on*`）。
+
 ## 7) 可选依赖策略
 
 - 必需依赖缺失：启动即失败并退出。
@@ -64,3 +67,4 @@ basic fallback 需按阶段校验：
 
 - `README.md` 与 `QUICKSTART.md` 的行为描述应与本契约一致。
 - 两个脚本的阈值常量命名应保持一一对应，避免漂移。
+- 自动降级全部失败时，错误信息应尽量包含最后一次失败原因，便于定位问题。
