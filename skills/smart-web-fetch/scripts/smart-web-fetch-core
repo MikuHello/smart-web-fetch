@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -44,7 +44,8 @@ MARKDOWN_NEW="https://api.markdown.new/api/v1/convert"
 DEFUDDLE_MD="https://defuddle.md/api/convert"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RULES_FILE="$SCRIPT_DIR/docs/fetch-rules.json"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+RULES_FILE="$SKILL_DIR/assets/fetch-rules.json"
 TMP_FILES=()
 
 
@@ -91,38 +92,43 @@ load_rules_from_file() {
         return 0
     fi
 
-    if ! command -v jq >/dev/null 2>&1; then
-        log_info "Rules file detected but jq is unavailable; using built-in defaults"
+    if command -v jq >/dev/null 2>&1; then
+        local value
+        value=$(jq -r '.thresholds.jina // empty' "$RULES_FILE" 2>/dev/null || true)
+        [[ "$value" =~ ^[0-9]+$ ]] && JINA_MIN_LENGTH="$value"
+
+        value=$(jq -r '.thresholds.markdown_new // empty' "$RULES_FILE" 2>/dev/null || true)
+        [[ "$value" =~ ^[0-9]+$ ]] && MARKDOWN_NEW_MIN_LENGTH="$value"
+
+        value=$(jq -r '.thresholds.defuddle // empty' "$RULES_FILE" 2>/dev/null || true)
+        [[ "$value" =~ ^[0-9]+$ ]] && DEFUDDLE_MIN_LENGTH="$value"
+
+        value=$(jq -r '.thresholds.basic // empty' "$RULES_FILE" 2>/dev/null || true)
+        [[ "$value" =~ ^[0-9]+$ ]] && BASIC_MIN_LENGTH="$value"
+
+        local -a structured_keywords=()
+        local -a html_keywords=()
+
+        mapfile -t structured_keywords < <(jq -r '.structured_error_keywords[]? // empty' "$RULES_FILE" 2>/dev/null || true)
+        if [[ ${#structured_keywords[@]} -gt 0 ]]; then
+            STRUCTURED_ERROR_KEYWORDS=("${structured_keywords[@]}")
+        fi
+
+        mapfile -t html_keywords < <(jq -r '.html_error_keywords[]? // empty' "$RULES_FILE" 2>/dev/null || true)
+        if [[ ${#html_keywords[@]} -gt 0 ]]; then
+            HTML_ERROR_KEYWORDS=("${html_keywords[@]}")
+        fi
+
+        log_info "Loaded thresholds and keywords from rules file: $RULES_FILE"
         return 0
     fi
 
-    local value
-    value=$(jq -r '.thresholds.jina // empty' "$RULES_FILE" 2>/dev/null || true)
-    [[ "$value" =~ ^[0-9]+$ ]] && JINA_MIN_LENGTH="$value"
-
-    value=$(jq -r '.thresholds.markdown_new // empty' "$RULES_FILE" 2>/dev/null || true)
-    [[ "$value" =~ ^[0-9]+$ ]] && MARKDOWN_NEW_MIN_LENGTH="$value"
-
-    value=$(jq -r '.thresholds.defuddle // empty' "$RULES_FILE" 2>/dev/null || true)
-    [[ "$value" =~ ^[0-9]+$ ]] && DEFUDDLE_MIN_LENGTH="$value"
-
-    value=$(jq -r '.thresholds.basic // empty' "$RULES_FILE" 2>/dev/null || true)
-    [[ "$value" =~ ^[0-9]+$ ]] && BASIC_MIN_LENGTH="$value"
-
-    local -a structured_keywords=()
-    local -a html_keywords=()
-
-    mapfile -t structured_keywords < <(jq -r '.structured_error_keywords[]? // empty' "$RULES_FILE" 2>/dev/null || true)
-    if [[ ${#structured_keywords[@]} -gt 0 ]]; then
-        STRUCTURED_ERROR_KEYWORDS=("${structured_keywords[@]}")
+    if load_rules_from_file_without_jq; then
+        log_info "Loaded thresholds and keywords from rules file without jq: $RULES_FILE"
+        return 0
     fi
 
-    mapfile -t html_keywords < <(jq -r '.html_error_keywords[]? // empty' "$RULES_FILE" 2>/dev/null || true)
-    if [[ ${#html_keywords[@]} -gt 0 ]]; then
-        HTML_ERROR_KEYWORDS=("${html_keywords[@]}")
-    fi
-
-    log_info "Loaded thresholds and keywords from rules file: $RULES_FILE"
+    log_warn "Failed to parse rules file without jq; using built-in defaults: $RULES_FILE"
 }
 
 normalize_keyword_text() {
@@ -331,7 +337,7 @@ is_structured_error_response() {
     # Fallback without jq: only treat JSON-looking payloads with explicit
     # "error"/"message" keys and common failure semantics as structured errors.
     compact_response=$(printf '%s' "$response" | tr -d '[:space:]')
-    if [[ ! "$compact_response" =~ ^[\{\[] ]]; then
+    if [[ "$compact_response" != "{"* ]] && [[ "$compact_response" != "["* ]]; then
         return 1
     fi
 
@@ -566,6 +572,217 @@ extract_markdown_from_json_without_jq() {
     return 1
 }
 
+extract_json_field_segment_without_jq() {
+    local input="$1"
+    local target_key="$2"
+    local opening_char="$3"
+    local closing_char="$4"
+    local length=${#input}
+    local pos=0
+    local char=""
+    local after_key_pos=""
+    local value_start=""
+    local cursor=0
+    local depth=0
+    local in_string=0
+    local escaped=0
+
+    while (( pos < length )); do
+        char="${input:pos:1}"
+        if [[ "$char" != '"' ]]; then
+            ((pos++))
+            continue
+        fi
+
+        if ! parse_json_string_without_jq "$input" "$pos"; then
+            return 1
+        fi
+
+        after_key_pos="$JSON_PARSE_NEXT_INDEX"
+        if [[ "$JSON_PARSE_VALUE" == "$target_key" ]]; then
+            after_key_pos=$(skip_json_whitespace_without_jq "$input" "$after_key_pos")
+            if [[ "${input:after_key_pos:1}" != ":" ]]; then
+                pos="$after_key_pos"
+                continue
+            fi
+
+            value_start=$(skip_json_whitespace_without_jq "$input" "$((after_key_pos + 1))")
+            if [[ "${input:value_start:1}" != "$opening_char" ]]; then
+                return 1
+            fi
+
+            cursor="$value_start"
+            depth=0
+            in_string=0
+            escaped=0
+
+            while (( cursor < length )); do
+                char="${input:cursor:1}"
+
+                if (( in_string )); then
+                    if (( escaped )); then
+                        escaped=0
+                    elif [[ "$char" == '\' ]]; then
+                        escaped=1
+                    elif [[ "$char" == '"' ]]; then
+                        in_string=0
+                    fi
+                else
+                    if [[ "$char" == '"' ]]; then
+                        in_string=1
+                    elif [[ "$char" == "$opening_char" ]]; then
+                        ((depth++))
+                    elif [[ "$char" == "$closing_char" ]]; then
+                        ((depth--))
+                        if (( depth == 0 )); then
+                            printf '%s' "${input:value_start:cursor-value_start+1}"
+                            return 0
+                        fi
+                    fi
+                fi
+
+                ((cursor++))
+            done
+
+            return 1
+        fi
+
+        pos="$after_key_pos"
+    done
+
+    return 1
+}
+
+extract_json_integer_field_without_jq() {
+    local input="$1"
+    local target_key="$2"
+    local length=${#input}
+    local pos=0
+    local char=""
+    local after_key_pos=""
+    local value_start=""
+    local value_end=""
+    local remainder=""
+    local integer_value=""
+
+    while (( pos < length )); do
+        char="${input:pos:1}"
+        if [[ "$char" != '"' ]]; then
+            ((pos++))
+            continue
+        fi
+
+        if ! parse_json_string_without_jq "$input" "$pos"; then
+            return 1
+        fi
+
+        after_key_pos="$JSON_PARSE_NEXT_INDEX"
+        if [[ "$JSON_PARSE_VALUE" == "$target_key" ]]; then
+            after_key_pos=$(skip_json_whitespace_without_jq "$input" "$after_key_pos")
+            if [[ "${input:after_key_pos:1}" != ":" ]]; then
+                pos="$after_key_pos"
+                continue
+            fi
+
+            value_start=$(skip_json_whitespace_without_jq "$input" "$((after_key_pos + 1))")
+            remainder="${input:value_start}"
+            if [[ "$remainder" =~ ^(-?[0-9]+) ]]; then
+                integer_value="${BASH_REMATCH[1]}"
+                if [[ "$integer_value" =~ ^[0-9]+$ ]]; then
+                    printf '%s' "$integer_value"
+                    return 0
+                fi
+                return 1
+            fi
+
+            return 1
+        fi
+
+        pos="$after_key_pos"
+    done
+
+    return 1
+}
+
+extract_json_string_array_without_jq() {
+    local input="$1"
+    local target_key="$2"
+    local array_segment=""
+    local length=0
+    local pos=1
+    local char=""
+    local comma_pos=""
+    local value=""
+
+    array_segment=$(extract_json_field_segment_without_jq "$input" "$target_key" "[" "]") || return 1
+    length=${#array_segment}
+
+    while (( pos < length - 1 )); do
+        pos=$(skip_json_whitespace_without_jq "$array_segment" "$pos")
+        if (( pos >= length - 1 )); then
+            break
+        fi
+
+        char="${array_segment:pos:1}"
+        if [[ "$char" != '"' ]]; then
+            return 1
+        fi
+
+        if ! parse_json_string_without_jq "$array_segment" "$pos"; then
+            return 1
+        fi
+
+        value="$JSON_PARSE_VALUE"
+        printf '%s\n' "$value"
+        pos="$JSON_PARSE_NEXT_INDEX"
+        pos=$(skip_json_whitespace_without_jq "$array_segment" "$pos")
+        if (( pos >= length - 1 )); then
+            break
+        fi
+
+        if [[ "${array_segment:pos:1}" != "," ]]; then
+            return 1
+        fi
+
+        ((pos++))
+    done
+
+    return 0
+}
+
+load_rules_from_file_without_jq() {
+    local rules_text=""
+    local thresholds_segment=""
+    local jina_threshold=""
+    local markdown_threshold=""
+    local defuddle_threshold=""
+    local basic_threshold=""
+    local -a structured_keywords=()
+    local -a html_keywords=()
+
+    rules_text=$(<"$RULES_FILE") || return 1
+    thresholds_segment=$(extract_json_field_segment_without_jq "$rules_text" "thresholds" "{" "}") || return 1
+
+    jina_threshold=$(extract_json_integer_field_without_jq "$thresholds_segment" "jina") || return 1
+    markdown_threshold=$(extract_json_integer_field_without_jq "$thresholds_segment" "markdown_new") || return 1
+    defuddle_threshold=$(extract_json_integer_field_without_jq "$thresholds_segment" "defuddle") || return 1
+    basic_threshold=$(extract_json_integer_field_without_jq "$thresholds_segment" "basic") || return 1
+
+    mapfile -t structured_keywords < <(extract_json_string_array_without_jq "$rules_text" "structured_error_keywords") || return 1
+    mapfile -t html_keywords < <(extract_json_string_array_without_jq "$rules_text" "html_error_keywords") || return 1
+
+    if [[ ${#structured_keywords[@]} -eq 0 ]] || [[ ${#html_keywords[@]} -eq 0 ]]; then
+        return 1
+    fi
+
+    JINA_MIN_LENGTH="$jina_threshold"
+    MARKDOWN_NEW_MIN_LENGTH="$markdown_threshold"
+    DEFUDDLE_MIN_LENGTH="$defuddle_threshold"
+    BASIC_MIN_LENGTH="$basic_threshold"
+    STRUCTURED_ERROR_KEYWORDS=("${structured_keywords[@]}")
+    HTML_ERROR_KEYWORDS=("${html_keywords[@]}")
+}
+
 skip_json_whitespace_without_jq() {
     local input="$1"
     local pos="$2"
@@ -702,11 +919,11 @@ fetch_jina() {
         set_last_fetch_error "Jina Reader request failed"
         log_warn "Jina Reader request failed"
         remove_tmp_file "$headers_file"
-    remove_tmp_file "$body_file"
+        remove_tmp_file "$body_file"
         return 1
     fi
     http_code=$(extract_http_status_code "$headers_file")
-    response=$(cat "$body_file")
+    response=$(<"$body_file")
     remove_tmp_file "$headers_file"
     remove_tmp_file "$body_file"
 
@@ -760,13 +977,13 @@ fetch_markdown_new() {
         set_last_fetch_error "markdown.new request failed"
         log_warn "markdown.new request failed"
         remove_tmp_file "$headers_file"
-    remove_tmp_file "$body_file"
+        remove_tmp_file "$body_file"
         return 1
     fi
 
     http_code=$(extract_http_status_code "$headers_file")
     content_type=$(extract_content_type "$headers_file")
-    response=$(cat "$body_file")
+    response=$(<"$body_file")
     remove_tmp_file "$headers_file"
     remove_tmp_file "$body_file"
 
@@ -829,6 +1046,7 @@ fetch_defuddle() {
     local payload=""
     local http_code
     local content_type=""
+    local markdown=""
     local headers_file=""
     local body_file=""
 
@@ -850,13 +1068,13 @@ fetch_defuddle() {
         set_last_fetch_error "defuddle.md request failed"
         log_warn "defuddle.md request failed"
         remove_tmp_file "$headers_file"
-    remove_tmp_file "$body_file"
+        remove_tmp_file "$body_file"
         return 1
     fi
 
     http_code=$(extract_http_status_code "$headers_file")
     content_type=$(extract_content_type "$headers_file")
-    response=$(cat "$body_file")
+    response=$(<"$body_file")
     remove_tmp_file "$headers_file"
     remove_tmp_file "$body_file"
 
@@ -884,8 +1102,33 @@ fetch_defuddle() {
         return 1
     fi
 
+    local compact_response=""
+    local is_json_object="0"
+
+    compact_response=$(printf '%s' "$response" | tr -d '[:space:]')
+    if [[ "$compact_response" =~ ^\{ ]]; then
+        is_json_object="1"
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+        markdown=$(printf '%s' "$response" | jq -r '.markdown // .content // .data // empty' 2>/dev/null || true)
+    elif [[ "$is_json_object" == "1" ]]; then
+        markdown=$(extract_markdown_from_json_without_jq "$response" || true)
+    fi
+
+    if [[ "$is_json_object" == "1" ]] && ([[ -z "$markdown" ]] || [[ "$markdown" == "null" ]]); then
+        set_last_fetch_error "defuddle.md returned JSON without usable markdown/content/data"
+        log_warn "defuddle.md returned JSON without usable markdown/content/data"
+        return 1
+    fi
+
     log_success "defuddle.md succeeded"
-    printf '%s\n' "$response"
+
+    if [[ -n "$markdown" ]] && [[ "$markdown" != "null" ]]; then
+        printf '%s\n' "$markdown"
+    else
+        printf '%s\n' "$response"
+    fi
 }
 
 fetch_basic() {
@@ -910,11 +1153,11 @@ fetch_basic() {
         set_last_fetch_error "Direct curl fallback request failed"
         log_warn "Direct curl fallback failed"
         remove_tmp_file "$headers_file"
-    remove_tmp_file "$body_file"
+        remove_tmp_file "$body_file"
         return 1
     fi
     http_code=$(extract_http_status_code "$headers_file")
-    response=$(cat "$body_file")
+    response=$(<"$body_file")
     remove_tmp_file "$headers_file"
     remove_tmp_file "$body_file"
 
@@ -1026,14 +1269,14 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         -o|--output)
-            validate_option_value "$1" "$2"
-            OUTPUT="$2"
+            validate_option_value "$1" "${2-}"
+            OUTPUT="${2-}"
             shift 2
             ;;
         -s|--service)
-            validate_option_value "$1" "$2"
-            validate_service_value "$2"
-            SERVICE="$2"
+            validate_option_value "$1" "${2-}"
+            validate_service_value "${2-}"
+            SERVICE="${2-}"
             shift 2
             ;;
         -v|--verbose)
@@ -1051,7 +1294,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             if [[ -n "$URL" ]]; then
-                exit_with_help_error "仅支持一个 URL 参数"
+                exit_with_help_error "Only one URL argument is allowed"
             fi
             URL="$1"
             shift

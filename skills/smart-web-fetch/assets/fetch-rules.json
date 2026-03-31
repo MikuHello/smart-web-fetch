@@ -1,5 +1,4 @@
 {
-  "providers": ["jina", "markdown", "defuddle", "basic"],
   "thresholds": {
     "jina": 100,
     "markdown_new": 40,

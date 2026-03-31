@@ -9,7 +9,7 @@ param(
     [Alias('v')]
     [switch]$VerboseMode,
     [switch]$NoClean,
-    [Alias('h', 'help')]
+    [Alias('h')]
     [switch]$Help,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$ExtraArgs
@@ -47,7 +47,8 @@ $script:HtmlErrorKeywords = @(
     'gateway timeout',
     'service unavailable'
 )
-$RulesFile = Join-Path -Path $PSScriptRoot -ChildPath 'docs/fetch-rules.json'
+$SkillRoot = Split-Path -Parent $PSScriptRoot
+$RulesFile = Join-Path -Path $SkillRoot -ChildPath 'assets/fetch-rules.json'
 $script:LastFetchError = $null
 
 function Load-RulesFromFile {
@@ -90,10 +91,10 @@ Options:
     -NoClean            Skip HTML cleanup in the basic fallback
 
 Examples:
-    ./smart-web-fetch.ps1 https://example.com
-    ./smart-web-fetch.ps1 https://example.com -Output output.md
-    ./smart-web-fetch.ps1 https://example.com -Service jina
-    ./smart-web-fetch.ps1 https://example.com -NoClean
+    ./scripts/smart-web-fetch.ps1 https://example.com
+    ./scripts/smart-web-fetch.ps1 https://example.com -Output output.md
+    ./scripts/smart-web-fetch.ps1 https://example.com -Service jina
+    ./scripts/smart-web-fetch.ps1 https://example.com -NoClean
 "@
 }
 
@@ -238,7 +239,7 @@ function Get-JinaRequestUrl([string]$TargetUrl) {
     } catch {
     }
 
-    return "$JinaReaderBase/$scheme://$urlWithoutScheme"
+    return "$JinaReaderBase/${scheme}://$urlWithoutScheme"
 }
 
 function Invoke-Request([string]$RequestUrl, [string]$Method = 'GET', [hashtable]$Headers = $null, [string]$Body = $null) {
@@ -386,6 +387,22 @@ function Try-ExtractMarkdownWithJq([string]$Response) {
     return $null
 }
 
+function Get-MarkdownFieldValue($ParsedJson) {
+    if ($null -eq $ParsedJson) {
+        return $null
+    }
+
+    $markdown = $ParsedJson.markdown
+    if ([string]::IsNullOrWhiteSpace($markdown)) { $markdown = $ParsedJson.content }
+    if ([string]::IsNullOrWhiteSpace($markdown)) { $markdown = $ParsedJson.data }
+
+    if ([string]::IsNullOrWhiteSpace($markdown)) {
+        return $null
+    }
+
+    return [string]$markdown
+}
+
 function Try-CleanHtmlWithPerl([string]$Html) {
     $perl = Get-OptionalCommand 'perl'
     if (-not $perl) {
@@ -499,9 +516,7 @@ function Fetch-MarkdownNew([string]$TargetUrl) {
 
         $markdown = Try-ExtractMarkdownWithJq $response
         if ([string]::IsNullOrWhiteSpace($markdown) -and $isJsonResponse) {
-            $markdown = $parsedJson.markdown
-            if ([string]::IsNullOrWhiteSpace($markdown)) { $markdown = $parsedJson.content }
-            if ([string]::IsNullOrWhiteSpace($markdown)) { $markdown = $parsedJson.data }
+            $markdown = Get-MarkdownFieldValue $parsedJson
         }
 
         if ($isJsonResponse -and [string]::IsNullOrWhiteSpace($markdown)) {
@@ -540,7 +555,30 @@ function Fetch-Defuddle([string]$TargetUrl) {
             return $null
         }
 
+        $parsedJson = $null
+        $isJsonResponse = $false
+        try {
+            $parsedJson = $response | ConvertFrom-Json -ErrorAction Stop
+            $isJsonResponse = $true
+        } catch {
+        }
+
+        $markdown = Try-ExtractMarkdownWithJq $response
+        if ([string]::IsNullOrWhiteSpace($markdown) -and $isJsonResponse) {
+            $markdown = Get-MarkdownFieldValue $parsedJson
+        }
+
+        if ($isJsonResponse -and [string]::IsNullOrWhiteSpace($markdown)) {
+            Set-LastFetchError 'defuddle.md returned JSON without usable markdown/content/data'
+            Write-WarnLog $script:LastFetchError
+            return $null
+        }
+
         Write-Success 'defuddle.md succeeded'
+        if (-not [string]::IsNullOrWhiteSpace($markdown)) {
+            return [string]$markdown
+        }
+
         return $response
     } catch {
         Set-LastFetchError "defuddle.md request failed: $(Get-RequestFailureSummary $_)"
@@ -558,12 +596,6 @@ function Fetch-Basic([string]$TargetUrl) {
             'Accept'     = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         }
         $response = $request.Content
-
-        if ($request.StatusCode -lt 200 -or $request.StatusCode -gt 299) {
-            Set-LastFetchError "Basic fallback returned HTTP $($request.StatusCode)"
-            Write-WarnLog $script:LastFetchError
-            return $null
-        }
 
         if ([string]::IsNullOrWhiteSpace($response) -or $response.Length -lt $BasicMinLength) {
             Set-LastFetchError 'Basic fallback returned invalid or incomplete content'
@@ -661,7 +693,7 @@ function Validate-ExtraArgs([string[]]$Args, [bool]$HelpRequested) {
         }
 
         if ($arg -match '^(?i)https?://|^[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}([/:?#].*)?$') {
-            throw '仅支持一个 URL 参数'
+            throw 'Only one URL argument is allowed'
         }
 
         throw "Unexpected argument: $arg"
@@ -713,7 +745,7 @@ try {
             New-Item -ItemType Directory -Path $parent -Force | Out-Null
         }
 
-        $content | Set-Content -Encoding UTF8 $Output
+        $content | Set-Content -Encoding utf8NoBOM $Output
         Write-Success "Saved output to: $Output"
     } else {
         $content

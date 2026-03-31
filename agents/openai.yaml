@@ -1,7 +1,0 @@
-interface:
-  display_name: "Smart Web Fetch"
-  short_description: "Fetch web pages as clean Markdown with multi-provider fallback."
-  default_prompt: "Use $smart-web-fetch to fetch a URL as clean Markdown."
-
-policy:
-  allow_implicit_invocation: true
