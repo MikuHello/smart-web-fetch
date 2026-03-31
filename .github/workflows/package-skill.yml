@@ -6,6 +6,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   package-skill:
     runs-on: ubuntu-latest
@@ -31,3 +34,21 @@ jobs:
           name: smart-web-fetch.zip
           path: dist/smart-web-fetch.zip
           if-no-files-found: error
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/smart-web-fetch.zip
+          generate_release_notes: false
+          name: Smart Web Fetch ${{ github.ref_name }}
+          body: |
+            First public release of Smart Web Fetch.
+
+            Highlights:
+            - Packaged `smart-web-fetch` skill archive for direct download
+            - Unified command interface across Bash, PowerShell, and Windows wrappers
+            - Multi-provider web fetching with clean Markdown-oriented output
+
+            Getting started:
+            - Download `smart-web-fetch.zip`
+            - Extract it and run from the package root directory
