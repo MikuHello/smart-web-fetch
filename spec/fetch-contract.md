@@ -85,10 +85,11 @@
 ### 回归流程
 
 1. 调整阈值或关键词时，先更新 `skills/smart-web-fetch/assets/fetch-rules.json`
-2. 对照本文件检查两个脚本的行为一致性
-3. 合并前确认上述 fixture 的预期结果仍然成立，且 Bash 在无 `jq` 时仍能从规则文件加载阈值与关键词
-4. 手工验证 `defuddle` 在 JSON 成功响应时会提取 `markdown` / `content` / `data` 字段正文，而不是输出原始 JSON
-5. 手工验证 `defuddle` 在 JSON 响应缺少上述字段时会判定失败，并保留最后一次失败原因供后续降级/报错使用
+2. 先运行离线回归脚本：`./spec/tests/offline-regression.sh`（仅校验夹具、规则文件和脚本语法，不依赖外网）
+3. 对照本文件检查两个脚本的行为一致性
+4. 合并前确认上述 fixture 的预期结果仍然成立，且 Bash 在无 `jq` 时仍能从规则文件加载阈值与关键词
+5. 手工验证 `defuddle` 在 JSON 成功响应时会提取 `markdown` / `content` / `data` 字段正文，而不是输出原始 JSON
+6. 手工验证 `defuddle` 在 JSON 响应缺少上述字段时会判定失败，并保留最后一次失败原因供后续降级/报错使用
 
 ## 9. 实现同步要求
 
