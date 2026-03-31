@@ -42,12 +42,25 @@ jobs:
           generate_release_notes: false
           name: Smart Web Fetch ${{ github.ref_name }}
           body: |
+            Smart Web Fetch 首个公开发行版。
+
+            亮点：
+            - 提供可直接下载使用的 `smart-web-fetch.zip`
+            - 统一 Bash、PowerShell 和 Windows 包装器的命令入口
+            - 面向 Markdown 输出的多服务网页抓取能力
+
+            快速开始：
+            - 下载 `smart-web-fetch.zip`
+            - 解压后在包根目录运行
+
+            ---
+
             First public release of Smart Web Fetch.
 
             Highlights:
-            - Packaged `smart-web-fetch` skill archive for direct download
+            - Packaged `smart-web-fetch.zip` for direct download
             - Unified command interface across Bash, PowerShell, and Windows wrappers
-            - Multi-provider web fetching with clean Markdown-oriented output
+            - Multi-provider web fetching with Markdown-oriented output
 
             Getting started:
             - Download `smart-web-fetch.zip`
