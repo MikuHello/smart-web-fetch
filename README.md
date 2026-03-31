@@ -21,6 +21,9 @@
 优先从最新发行版页面下载：[Latest release](https://github.com/MikuHello/smart-web-fetch/releases/latest)。
 也可以直接下载仓库中的 `skills/smart-web-fetch` 目录。
 
+以下命令默认在发行包根目录或下载后的 `skills/smart-web-fetch/` 目录中执行。
+如果你是直接 clone 整个仓库，请先执行 `cd skills/smart-web-fetch`。
+
 **Linux / macOS / WSL / Git Bash** 需要先赋予执行权限：
 
 ```bash
@@ -79,7 +82,7 @@ py -m pip install html2text
 
 ## 🚀 快速开始
 
-所有终端使用统一命令名称和参数接口。以下示例默认在解压后的 `smart-web-fetch/` 目录中执行。
+所有终端使用统一命令名称和参数接口。以下示例默认在发行包根目录或下载后的 `skills/smart-web-fetch/` 目录中执行。
 
 | 终端环境 | 调用方式 |
 | --- | --- |

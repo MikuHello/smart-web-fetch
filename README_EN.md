@@ -19,6 +19,9 @@ A webpage reading and main-content extraction tool for known URLs.
 Prefer downloading from the latest release page: [Latest release](https://github.com/MikuHello/smart-web-fetch/releases/latest).
 You can also download the `skills/smart-web-fetch` directory directly from the repository.
 
+The commands below assume you are running from the release-package root or the downloaded `skills/smart-web-fetch/` directory.
+If you cloned the full repository, run `cd skills/smart-web-fetch` first.
+
 **Linux / macOS / WSL / Git Bash** should make the scripts executable first:
 
 ```bash
@@ -77,7 +80,7 @@ py -m pip install html2text
 
 ## 🚀 Quick Start
 
-All terminals use the same command name and argument interface. The examples below assume you are running inside the extracted `smart-web-fetch/` directory.
+All terminals use the same command name and argument interface. The examples below assume you are running from the release-package root or the downloaded `skills/smart-web-fetch/` directory.
 
 | Terminal Environment | Invocation |
 | --- | --- |
