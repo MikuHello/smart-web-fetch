@@ -22,20 +22,79 @@ param(
     # Accept POSIX-style --no-clean in addition to -NoClean
     [switch]$NoClean,
 
-    # Catch any remaining arguments so we can detect --no-clean passed as a string
+    # Catch any remaining arguments so we can handle POSIX-style long options
     [Parameter(ValueFromRemainingArguments)]
     [string[]]$ExtraArgs
 )
 
-# Detect --no-clean / --verbose / --help passed as bare strings in $ExtraArgs
-# (happens when PowerShell does not parse them as switch parameters)
+# Handle POSIX-style long options that PowerShell leaves in $ExtraArgs.
+# Supported:
+#   --no-clean
+#   --verbose
+#   --help
+#   --output <file> / --output=<file>
+#   --service <name> / --service=<name>
 if ($ExtraArgs) {
-    foreach ($a in $ExtraArgs) {
-        switch ($a) {
-            '--no-clean'  { $NoClean = $true }
-            '--verbose'   { $VerboseMode = $true }
-            '--help'      { $Help = $true }
-            '-h'          { $Help = $true }
+    for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+        $a = $ExtraArgs[$i]
+
+        if ($a -notmatch '^-') {
+            if ([string]::IsNullOrWhiteSpace($Url)) {
+                $Url = $a
+                continue
+            }
+
+            Write-Error "smart-web-fetch: unexpected extra argument: $a"
+            exit 1
+        }
+
+        switch -Regex ($a) {
+            '^--no-clean$' {
+                $NoClean = $true
+                continue
+            }
+            '^--verbose$' {
+                $VerboseMode = $true
+                continue
+            }
+            '^--help$|^-h$' {
+                $Help = $true
+                continue
+            }
+            '^--output=(.+)$' {
+                $Output = $Matches[1]
+                continue
+            }
+            '^--service=(.+)$' {
+                $Service = $Matches[1]
+                continue
+            }
+            '^--output$' {
+                if ($i + 1 -ge $ExtraArgs.Count) {
+                    Write-Error 'smart-web-fetch: missing value for --output'
+                    exit 1
+                }
+                $i++
+                if ($ExtraArgs[$i] -match '^-') {
+                    Write-Error 'smart-web-fetch: missing value for --output'
+                    exit 1
+                }
+                $Output = $ExtraArgs[$i]
+                continue
+            }
+            '^--service$' {
+                if ($i + 1 -ge $ExtraArgs.Count) {
+                    Write-Error 'smart-web-fetch: missing value for --service'
+                    exit 1
+                }
+                $i++
+                if ($ExtraArgs[$i] -match '^-') {
+                    Write-Error 'smart-web-fetch: missing value for --service'
+                    exit 1
+                }
+                $Service = $ExtraArgs[$i]
+                continue
+            }
             default {
                 Write-Error "smart-web-fetch: unknown argument: $a"
                 exit 1
