@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# smart-web-fetch — unified entry point
+# Detects available runtime and routes to the correct core implementation.
+# Accepts POSIX-style parameters; translates to PowerShell names when needed.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ---------------------------------------------------------------------------
+# Route to Bash core when curl is available (preferred path)
+# ---------------------------------------------------------------------------
+if command -v curl > /dev/null 2>&1; then
+    exec "$SCRIPT_DIR/smart-web-fetch-core" "$@"
+fi
+
+# ---------------------------------------------------------------------------
+# Fall back to PowerShell 7 when curl is absent
+# ---------------------------------------------------------------------------
+if ! command -v pwsh > /dev/null 2>&1; then
+    echo "smart-web-fetch: error: neither curl nor pwsh (PowerShell 7) was found." >&2
+    echo "  Install curl for Bash usage, or install PowerShell 7 for Windows usage." >&2
+    exit 1
+fi
+
+# Translate POSIX-style arguments to PowerShell parameter names.
+# Build an array to avoid any quoting / special-character issues.
+ps_args=()
+skip_next=0
+
+for arg in "$@"; do
+    if [[ "$skip_next" -eq 1 ]]; then
+        ps_args+=("$arg")
+        skip_next=0
+        continue
+    fi
+
+    case "$arg" in
+        --no-clean)      ps_args+=("-NoClean") ;;
+        --verbose)       ps_args+=("-VerboseMode") ;;
+        --output)        ps_args+=("-Output"); skip_next=1 ;;
+        --service)       ps_args+=("-Service"); skip_next=1 ;;
+        --help)          ps_args+=("-Help") ;;
+        # Short flags and positional arguments pass through unchanged.
+        # The PS1 core accepts: -o, -s, -v, -h via [Alias] attributes.
+        *)               ps_args+=("$arg") ;;
+    esac
+done
+
+exec pwsh -File "$SCRIPT_DIR/smart-web-fetch-core.ps1" "${ps_args[@]}"
