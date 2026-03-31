@@ -16,6 +16,8 @@ Use the bundled scripts to retrieve a URL as clean Markdown or text.
 
 ## Run
 
+This skill is intended to be distributed as a standalone `smart-web-fetch/` directory or zip. The commands below assume you are running from inside that extracted directory.
+
 所有终端使用相同的参数接口：
 
 ### Bash / Unix-like systems
@@ -27,10 +29,8 @@ Use the bundled scripts to retrieve a URL as clean Markdown or text.
 ### Windows CMD / 原生 PowerShell
 
 ```cmd
-smart-web-fetch <URL>
+.\scripts\smart-web-fetch <URL>
 ```
-
-（需将 `scripts/` 目录加入 PATH，或使用完整路径）
 
 ### PowerShell 7（显式调用）
 
@@ -77,3 +77,9 @@ The runtime rules file is `assets/fetch-rules.json`. The scripts load it when pr
 - `scripts/smart-web-fetch-core`: Bash 核心实现。不直接调用。
 - `scripts/smart-web-fetch-core.ps1`: PowerShell 核心实现。不直接调用。
 - `assets/fetch-rules.json`: Runtime thresholds and keyword rules.
+
+## Packaging
+
+- GitHub Actions builds `smart-web-fetch.zip` as the official distributable artifact.
+- The zip root is `smart-web-fetch/` and contains only `SKILL.md`, `assets/`, and `scripts/`.
+- Repository-only files such as `spec/` are not included in the packaged skill.

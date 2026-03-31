@@ -1204,7 +1204,6 @@ fetch_basic() {
 smart_fetch() {
     local url="$1"
     local specified_service="$2"
-    local result=""
 
     if [[ -z "$url" ]]; then
         log_error "Please provide a URL"
@@ -1221,13 +1220,13 @@ smart_fetch() {
     if [[ -n "$specified_service" ]]; then
         case "$specified_service" in
             jina)
-                result=$(fetch_jina "$url") && { printf '%s\n' "$result"; return 0; }
+                fetch_jina "$url" && return 0
                 ;;
             markdown)
-                result=$(fetch_markdown_new "$url") && { printf '%s\n' "$result"; return 0; }
+                fetch_markdown_new "$url" && return 0
                 ;;
             defuddle)
-                result=$(fetch_defuddle "$url") && { printf '%s\n' "$result"; return 0; }
+                fetch_defuddle "$url" && return 0
                 ;;
             *)
                 exit_with_help_error "Invalid service: ${specified_service}. Allowed values: jina|markdown|defuddle"
@@ -1242,10 +1241,10 @@ smart_fetch() {
         return 1
     fi
 
-    result=$(fetch_jina "$url") && { printf '%s\n' "$result"; return 0; }
-    result=$(fetch_markdown_new "$url") && { printf '%s\n' "$result"; return 0; }
-    result=$(fetch_defuddle "$url") && { printf '%s\n' "$result"; return 0; }
-    result=$(fetch_basic "$url") && { printf '%s\n' "$result"; return 0; }
+    fetch_jina "$url" && return 0
+    fetch_markdown_new "$url" && return 0
+    fetch_defuddle "$url" && return 0
+    fetch_basic "$url" && return 0
 
     if [[ -n "$LAST_FETCH_ERROR" ]]; then
         log_error "All fetch methods failed. Last error: ${LAST_FETCH_ERROR}"

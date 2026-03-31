@@ -1,72 +1,110 @@
 # Smart Web Fetch
 
+[English](./README_EN.md)
+
 面向智能体、脚本和自动化流程的轻量级网页抓取工具，把网页内容转换成干净、易复用的 Markdown。
 
-> Fork 自 `Kim-Huang-JunKai/smart-web-fetch`
+> Fork 自 `Kim-Huang-JunKai/smart-web-fetch`  
 > 借鉴来源：`clawhub.ai/Leochens/smart-web-fetch`，感谢原作者的创意和工作流设计。
 
-## 🎯 适合做什么
+## 🎯 核心定位
 
-- 把网页正文转换成适合阅读、总结和二次处理的 Markdown
-- 给 agent / 自动化流程提供稳定的网页读取入口
-- 在单一服务源失败时自动切换后备路径
-- 将抓取结果保存到文件，便于归档和分析
+面向已知 URL 的网页读取与正文提取工具。
+
+- 将网页正文转换成适合阅读、总结和二次处理的 Markdown
+- 为 agent 和自动化流程提供稳定的已知 URL 读取入口
+- 内置服务降级策略，在单一路径失败时自动切换后备路径
+- 支持将抓取结果保存到文件，便于归档和分析
 
 ## 📦 安装
 
-```bash
-git clone https://github.com/<your-org>/smart-web-fetch.git
-cd smart-web-fetch
-```
+优先从最新发行版页面下载：[Latest release](https://github.com/MikuHello/smart-web-fetch/releases/latest)。
+也可以直接下载仓库中的 `skills/smart-web-fetch` 目录。
 
-**Linux / macOS / WSL / Git Bash** — 赋予执行权限：
+**Linux / macOS / WSL / Git Bash** 需要先赋予执行权限：
 
 ```bash
-chmod +x ./skills/smart-web-fetch/scripts/smart-web-fetch
-chmod +x ./skills/smart-web-fetch/scripts/smart-web-fetch-core
+chmod +x ./scripts/smart-web-fetch
+chmod +x ./scripts/smart-web-fetch-core
 ```
-
 
 ### 依赖
 
-| 依赖项 | 说明 |
-| --- | --- |
-| `curl` | Bash 路径必需；缺失时自动切换到 PowerShell 路径 |
-| PowerShell 7 + `Invoke-WebRequest` | `curl` 不可用时必需；两者均缺失则报错退出 |
-| `jq` | 可选；缺失时 Bash 回退内置解析，PowerShell 回退 `ConvertFrom-Json` |
-| `perl` | 可选；缺失时回退 awk / 原生正则清洗，HTML 清洗效果略弱 |
-| `html2text` / `lynx` | 可选；缺失时 basic fallback 保留清洗后 HTML，不转纯文本 |
-
 > Bash core 采用严格模式（`set -euo pipefail`）执行；参数缺值等边界情况会直接报错退出。
+
+| 运行入口 | 依赖项 | 类型 | 启动时行为 |
+| --- | --- | --- | --- |
+| `scripts/smart-web-fetch`（Bash） | `curl` | 必需 | 缺失时自动切换到 PowerShell 路径；若 `pwsh` 也不存在则报错退出 |
+| `scripts/smart-web-fetch`（Bash） | `jq` | 可选 | verbose 模式下提示缺失，继续执行并回退内置 JSON 解析 |
+| `scripts/smart-web-fetch`（Bash） | `perl` | 可选 | verbose 模式下提示缺失，继续执行并回退 awk 轻量 HTML 清洗 |
+| `scripts/smart-web-fetch`（Bash） | `html2text` / `lynx` | 可选 | 两者都缺失时仅提示，继续执行并输出清洗后的 HTML |
+| `scripts/smart-web-fetch.ps1`（PowerShell） | PowerShell 7+ | 必需 | 版本不足时立即报错并退出 |
+| `scripts/smart-web-fetch.ps1`（PowerShell） | `Invoke-WebRequest` | 必需 | 不可用时立即报错并退出 |
+| `scripts/smart-web-fetch.ps1`（PowerShell） | `jq` | 可选 | verbose 模式下提示缺失，继续执行并回退 `ConvertFrom-Json` |
+| `scripts/smart-web-fetch.ps1`（PowerShell） | `perl` | 可选 | verbose 模式下提示缺失，继续执行并回退 PowerShell 正则清洗 |
+| `scripts/smart-web-fetch.ps1`（PowerShell） | `html2text` / `lynx` | 可选 | 两者都缺失时仅提示，继续执行并输出清洗后的 HTML |
+
+### 常见安装命令
+
+#### macOS
+
+```bash
+brew install jq html2text lynx perl
+```
+
+#### Debian / Ubuntu
+
+```bash
+sudo apt-get update && sudo apt-get install -y curl jq html2text lynx perl
+```
+
+#### Fedora / RHEL / CentOS Stream
+
+```bash
+sudo dnf install -y curl jq html2text lynx perl
+```
+
+#### Arch Linux
+
+```bash
+sudo pacman -S --needed curl jq html2text lynx perl
+```
+
+#### Windows
+
+```powershell
+winget install Microsoft.PowerShell jqlang.jq StrawberryPerl.StrawberryPerl lynx.portable
+py -m pip install html2text
+```
 
 ## 🚀 快速开始
 
-所有终端使用**统一命令名称和参数接口**：
+所有终端使用统一命令名称和参数接口。以下示例默认在解压后的 `smart-web-fetch/` 目录中执行。
 
 | 终端环境 | 调用方式 |
 | --- | --- |
-| Linux / macOS / WSL / Git Bash | `./skills/smart-web-fetch/scripts/smart-web-fetch <URL>` |
-| Windows CMD / 原生 PowerShell | `.\skills\smart-web-fetch\scripts\smart-web-fetch <URL>` |
-| PowerShell 7（显式调用） | `pwsh -File .\skills\smart-web-fetch\scripts\smart-web-fetch.ps1 <URL>` |
+| Linux / macOS / WSL / Git Bash | `./scripts/smart-web-fetch <URL>` |
+| Windows CMD / 原生 PowerShell | `.\scripts\smart-web-fetch <URL>` |
+| PowerShell 7（显式调用） | `pwsh -File .\scripts\smart-web-fetch.ps1 <URL>` |
 
 入口脚本自动检测运行时：有 `curl` 时走 Bash 路径，否则回退 PowerShell 7。Windows 下 `.cmd` 文件直接调用 PowerShell 包装器。
 
 ### 常用示例
 
 ```bash
-./skills/smart-web-fetch/scripts/smart-web-fetch https://example.com -o article.md   # 保存到文件
-./skills/smart-web-fetch/scripts/smart-web-fetch https://example.com -s jina          # 指定服务源
-./skills/smart-web-fetch/scripts/smart-web-fetch https://example.com -v               # 详细日志
-./skills/smart-web-fetch/scripts/smart-web-fetch https://example.com --no-clean       # 跳过 HTML 清洗
+./scripts/smart-web-fetch https://example.com -o article.md
+./scripts/smart-web-fetch https://example.com -s jina
+./scripts/smart-web-fetch https://example.com -v
+./scripts/smart-web-fetch https://example.com --no-clean
 ```
 
 Windows CMD / 原生 PowerShell：
 
 ```cmd
-.\skills\smart-web-fetch\scripts\smart-web-fetch https://example.com -o article.md
-.\skills\smart-web-fetch\scripts\smart-web-fetch https://example.com -s jina
-.\skills\smart-web-fetch\scripts\smart-web-fetch https://example.com -v
-.\skills\smart-web-fetch\scripts\smart-web-fetch https://example.com --no-clean
+.\scripts\smart-web-fetch https://example.com -o article.md
+.\scripts\smart-web-fetch https://example.com -s jina
+.\scripts\smart-web-fetch https://example.com -v
+.\scripts\smart-web-fetch https://example.com --no-clean
 ```
 
 ## ⚙️ 参数一览
@@ -92,26 +130,22 @@ Windows CMD / 原生 PowerShell：
 | 3 | defuddle.md | POST | `defuddle.md/api/convert` |
 | 4 | basic fallback | GET | 原始 URL，本地 HTML 清洗 |
 
-> 详细判定规则见 [`spec/fetch-contract.md`](spec/fetch-contract.md)。
+仓库中的详细判定规则见 [`spec/fetch-contract.md`](spec/fetch-contract.md)。
 
-## 📁 目录结构
+## 📁 仓库目录结构
 
-```
+```text
 smart-web-fetch/
-├── skills/smart-web-fetch/
-│   ├── SKILL.md                          # 智能体集成说明
-│   ├── scripts/
-│   │   ├── smart-web-fetch               # 统一入口（Bash / Git Bash）
-│   │   ├── smart-web-fetch.ps1           # 统一入口（PowerShell 7）
-│   │   ├── smart-web-fetch.cmd           # 统一入口（Windows CMD / 原生 PowerShell）
-│   │   ├── smart-web-fetch-core          # Bash 核心实现（不直接调用）
-│   │   └── smart-web-fetch-core.ps1      # PowerShell 核心实现（不直接调用）
-│   └── assets/
-│       └── fetch-rules.json              # 阈值与关键词规则（可调）
+├── skills/
+│   └── smart-web-fetch/
+│       ├── SKILL.md
+│       ├── assets/
+│       └── scripts/
 ├── spec/
-│   ├── fetch-contract.md                 # 行为契约与回归用例
-│   └── fixtures/                         # 离线测试样例数据
+│   ├── fetch-contract.md
+│   └── fixtures/
 ├── README.md
+├── README_EN.md
 └── LICENSE
 ```
 

@@ -1,0 +1,33 @@
+name: Package Smart Web Fetch Skill
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  package-skill:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build smart-web-fetch.zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/package-root
+          cp -R skills/smart-web-fetch dist/package-root/smart-web-fetch
+          (
+            cd dist/package-root
+            zip -r ../smart-web-fetch.zip smart-web-fetch
+          )
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-web-fetch.zip
+          path: dist/smart-web-fetch.zip
+          if-no-files-found: error
