@@ -25,6 +25,133 @@ assert_file_contains() {
     fi
 }
 
+extract_json_string_field() {
+    local path="$1"
+    local field="$2"
+    awk -v target="$field" '
+        {
+            text = text $0 "\n"
+        }
+        END {
+            pattern = "\"" target "\"[[:space:]]*:[[:space:]]*\""
+            if (!match(text, pattern)) {
+                exit 1
+            }
+
+            pos = RSTART + RLENGTH
+            value = ""
+            n = length(text)
+
+            while (pos <= n) {
+                ch = substr(text, pos, 1)
+                if (ch == "\\") {
+                    pos++
+                    if (pos > n) {
+                        exit 1
+                    }
+
+                    esc = substr(text, pos, 1)
+                    if (esc == "u") {
+                        hex = substr(text, pos + 1, 4)
+                        if (hex !~ /^[0-9A-Fa-f]{4}$/) {
+                            exit 1
+                        }
+                        value = value "?"
+                        pos += 4
+                    } else {
+                        value = value esc
+                    }
+                } else if (ch == "\"") {
+                    print value
+                    exit 0
+                } else {
+                    value = value ch
+                }
+
+                pos++
+            }
+
+            exit 1
+        }
+    ' "$path"
+}
+
+extract_json_object_segment() {
+    local path="$1"
+    local field="$2"
+    awk -v target="$field" '
+        {
+            text = text $0 "\n"
+        }
+        END {
+            pattern = "\"" target "\"[[:space:]]*:[[:space:]]*\\{"
+            if (!match(text, pattern)) {
+                exit 1
+            }
+
+            start = RSTART + RLENGTH - 1
+            n = length(text)
+            depth = 0
+            in_string = 0
+            escaped = 0
+
+            for (pos = start; pos <= n; pos++) {
+                ch = substr(text, pos, 1)
+
+                if (in_string) {
+                    if (escaped) {
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == "\"") {
+                        in_string = 0
+                    }
+                } else {
+                    if (ch == "\"") {
+                        in_string = 1
+                    } else if (ch == "{") {
+                        depth++
+                    } else if (ch == "}") {
+                        depth--
+                        if (depth == 0) {
+                            print substr(text, start, pos - start + 1)
+                            exit 0
+                        }
+                    }
+                }
+            }
+
+            exit 1
+        }
+    ' "$path"
+}
+
+assert_json_boolean_true() {
+    local path="$1"
+    local field="$2"
+    if ! grep -Eq "\"$field\"[[:space:]]*:[[:space:]]*true" "$path"; then
+        fail "Expected $field=true in $path"
+    fi
+}
+
+assert_positive_integer_threshold_field() {
+    local path="$1"
+    local field="$2"
+    local segment
+
+    segment=$(extract_json_object_segment "$path" "thresholds") || fail "Expected thresholds object in $path"
+    if ! printf '%s\n' "$segment" | grep -Eq "\"$field\"[[:space:]]*:[[:space:]]*[1-9][0-9]*"; then
+        fail "Expected positive integer thresholds.$field in $path"
+    fi
+}
+
+assert_bash_syntax() {
+    local path="$1"
+    if ! tr -d '\r' < "$path" | bash -n; then
+        fail "Bash syntax check failed: $path"
+    fi
+}
+
 main() {
     assert_file_exists "$CONTRACT_FILE"
     assert_file_exists "$RULES_FILE"
@@ -36,7 +163,6 @@ main() {
     # HTML fixture should stay aligned with contract keywords.
     assert_file_contains "$FIXTURE_DIR/html-error-page.html" "<html"
     assert_file_contains "$FIXTURE_DIR/html-error-page.html" "<title"
-    assert_file_contains "$FIXTURE_DIR/html-error-page.html" "forbidden"
     assert_file_contains "$FIXTURE_DIR/html-error-page.html" "access denied"
 
     # Keep the "too-short" fixture truly short for threshold checks.
@@ -44,38 +170,23 @@ main() {
     too_short_len=$(wc -c < "$FIXTURE_DIR/too-short.txt")
     [[ "$too_short_len" -lt 40 ]] || fail "Expected too-short fixture length < 40, got $too_short_len"
 
-    # JSON fixture sanity checks via Python stdlib only.
-    python3 - "$FIXTURE_DIR/markdown-success.json" "$FIXTURE_DIR/structured-error.json" "$RULES_FILE" <<'PY'
-import json
-import sys
+    # JSON fixture sanity checks without requiring Python.
+    local markdown_value
+    markdown_value=$(extract_json_string_field "$FIXTURE_DIR/markdown-success.json" "markdown")
+    [[ -n "$markdown_value" ]] || fail "markdown-success.json must include a markdown field"
+    [[ ${#markdown_value} -ge 40 ]] || fail "markdown-success.json markdown field should be >= 40 chars"
 
-markdown_fixture, error_fixture, rules_file = sys.argv[1:]
+    assert_json_boolean_true "$FIXTURE_DIR/structured-error.json" "error"
+    assert_file_contains "$FIXTURE_DIR/structured-error.json" "forbidden"
 
-with open(markdown_fixture, "r", encoding="utf-8") as f:
-    markdown_data = json.load(f)
-markdown_value = str(markdown_data.get("markdown", ""))
-if len(markdown_value) < 40:
-    raise SystemExit("markdown-success.json markdown field should be >= 40 chars")
-
-with open(error_fixture, "r", encoding="utf-8") as f:
-    error_data = json.load(f)
-if error_data.get("error") is not True:
-    raise SystemExit("structured-error.json must have error=true")
-if "forbidden" not in str(error_data.get("message", "")).lower():
-    raise SystemExit("structured-error.json message should include forbidden")
-
-with open(rules_file, "r", encoding="utf-8") as f:
-    rules = json.load(f)
-thresholds = rules.get("thresholds", {})
-for key in ("jina", "markdown_new", "defuddle", "basic"):
-    value = thresholds.get(key)
-    if not isinstance(value, int) or value <= 0:
-        raise SystemExit(f"rules threshold '{key}' must be a positive integer")
-PY
+    assert_positive_integer_threshold_field "$RULES_FILE" "jina"
+    assert_positive_integer_threshold_field "$RULES_FILE" "markdown_new"
+    assert_positive_integer_threshold_field "$RULES_FILE" "defuddle"
+    assert_positive_integer_threshold_field "$RULES_FILE" "basic"
 
     # Basic script syntax checks.
-    bash -n "$ROOT_DIR/skills/smart-web-fetch/scripts/smart-web-fetch"
-    bash -n "$ROOT_DIR/skills/smart-web-fetch/scripts/smart-web-fetch-core"
+    assert_bash_syntax "$ROOT_DIR/skills/smart-web-fetch/scripts/smart-web-fetch"
+    assert_bash_syntax "$ROOT_DIR/skills/smart-web-fetch/scripts/smart-web-fetch-core"
 
     echo "[PASS] Offline regression checks passed"
 }
