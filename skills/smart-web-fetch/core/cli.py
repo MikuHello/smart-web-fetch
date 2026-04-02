@@ -20,6 +20,7 @@ INTERPRETER_ERROR = (
 
 _IPV4_RE = re.compile(r"^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$")
 _HOST_WITH_PORT_RE = re.compile(r"^(?P<host>.+?)(?::(?P<port>\d+))?$")
+_HOST_LABEL_RE = re.compile(r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)$")
 
 
 @dataclass
@@ -117,7 +118,13 @@ def _is_host_like_input(candidate: str) -> bool:
 
 
 def _is_host_like_host(host: str) -> bool:
-    return host == "localhost" or "." in host or bool(_IPV4_RE.fullmatch(host)) or _is_bracketed_ipv6(host)
+    return (
+        host == "localhost"
+        or "." in host
+        or bool(_IPV4_RE.fullmatch(host))
+        or _is_bracketed_ipv6(host)
+        or bool(_HOST_LABEL_RE.fullmatch(host))
+    )
 
 
 def _is_bracketed_ipv6(host: str) -> bool:

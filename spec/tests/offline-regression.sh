@@ -300,6 +300,7 @@ import core.sources as sources
 
 rules = module.load_rules(False)
 assert module.normalize_url("example.com") == "https://example.com"
+assert module.normalize_url("myservice:8080/path") == "https://myservice:8080/path"
 assert module.normalize_url("localhost:3000/foo") == "https://localhost:3000/foo"
 assert module.normalize_url("example.com:8080/path") == "https://example.com:8080/path"
 assert module.normalize_url("http://example.com") == "http://example.com"
