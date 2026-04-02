@@ -28,56 +28,45 @@
 
 ```bash
 chmod +x ./scripts/smart-web-fetch
-chmod +x ./scripts/smart-web-fetch-core
 ```
 
 ### 依赖
 
-> Bash core 采用严格模式（`set -euo pipefail`）执行；参数缺值等边界情况会直接报错退出。
-
-| 运行入口 | 依赖项 | 类型 | 启动时行为 |
-| --- | --- | --- | --- |
-| `scripts/smart-web-fetch`（Bash） | `curl` | 必需 | 缺失时自动切换到 PowerShell 路径；若 `pwsh` 也不存在则报错退出 |
-| `scripts/smart-web-fetch`（Bash） | `jq` | 可选 | verbose 模式下提示缺失，继续执行并回退内置 JSON 解析 |
-| `scripts/smart-web-fetch`（Bash） | `perl` | 可选 | verbose 模式下提示缺失，继续执行并回退 awk 轻量 HTML 清洗 |
-| `scripts/smart-web-fetch`（Bash） | `html2text` / `lynx` | 可选 | 两者都缺失时仅提示，继续执行并输出清洗后的 HTML |
-| `scripts/smart-web-fetch.ps1`（PowerShell） | PowerShell 7+ | 必需 | 版本不足时立即报错并退出 |
-| `scripts/smart-web-fetch.ps1`（PowerShell） | `Invoke-WebRequest` | 必需 | 不可用时立即报错并退出 |
-| `scripts/smart-web-fetch.ps1`（PowerShell） | `jq` | 可选 | verbose 模式下提示缺失，继续执行并回退 `ConvertFrom-Json` |
-| `scripts/smart-web-fetch.ps1`（PowerShell） | `perl` | 可选 | verbose 模式下提示缺失，继续执行并回退 PowerShell 正则清洗 |
-| `scripts/smart-web-fetch.ps1`（PowerShell） | `html2text` / `lynx` | 可选 | 两者都缺失时仅提示，继续执行并输出清洗后的 HTML |
+- 统一运行时基线为 `Python 3.11+`
+- 默认只依赖 Python 标准库
+- `core/` 是内部实现包；对外包装器会执行技能根目录下确定的 `main.py` bootstrap，再由它引导 `core.cli:main`
+- 不再依赖 `curl` / `pwsh` / `jq` / `perl` / `html2text` / `lynx`
 
 ### 常见安装命令
 
 #### macOS
 
 ```bash
-brew install jq html2text lynx perl
+brew install python
 ```
 
 #### Debian / Ubuntu
 
 ```bash
-sudo apt-get update && sudo apt-get install -y curl jq html2text lynx perl
+sudo apt-get update && sudo apt-get install -y python3
 ```
 
 #### Fedora / RHEL / CentOS Stream
 
 ```bash
-sudo dnf install -y curl jq html2text lynx perl
+sudo dnf install -y python3
 ```
 
 #### Arch Linux
 
 ```bash
-sudo pacman -S --needed curl jq html2text lynx perl
+sudo pacman -S --needed python
 ```
 
 #### Windows
 
 ```powershell
-winget install Microsoft.PowerShell jqlang.jq StrawberryPerl.StrawberryPerl lynx.portable
-py -m pip install html2text
+winget install Python.Python.3.11
 ```
 
 ## 🚀 快速开始
@@ -90,21 +79,40 @@ py -m pip install html2text
 | Windows CMD / 原生 PowerShell | `.\scripts\smart-web-fetch <URL>` |
 | PowerShell 7（显式调用） | `pwsh -File .\scripts\smart-web-fetch.ps1 <URL>` |
 
-入口脚本自动检测运行时：有 `curl` 时走 Bash 路径，否则回退 PowerShell 7。Windows 下 `.cmd` 文件直接调用 PowerShell 包装器。
+### 按场景使用
 
-### 常用示例
+直接查看正文：
+
+```bash
+./scripts/smart-web-fetch https://example.com
+```
+
+保存到文件：
 
 ```bash
 ./scripts/smart-web-fetch https://example.com -o article.md
+```
+
+返回结构化 JSON：
+
+```bash
+./scripts/smart-web-fetch https://example.com --json
+```
+
+指定服务源或调试抓取过程：
+
+```bash
 ./scripts/smart-web-fetch https://example.com -s jina
 ./scripts/smart-web-fetch https://example.com -v
 ./scripts/smart-web-fetch https://example.com --no-clean
 ```
 
-Windows CMD / 原生 PowerShell：
+Windows CMD / 原生 PowerShell 示例：
 
 ```cmd
+.\scripts\smart-web-fetch https://example.com
 .\scripts\smart-web-fetch https://example.com -o article.md
+.\scripts\smart-web-fetch https://example.com --json
 .\scripts\smart-web-fetch https://example.com -s jina
 .\scripts\smart-web-fetch https://example.com -v
 .\scripts\smart-web-fetch https://example.com --no-clean
@@ -112,21 +120,34 @@ Windows CMD / 原生 PowerShell：
 
 ## ⚙️ 参数一览
 
-| 功能 | 参数 |
-| --- | --- |
-| 显示帮助 | `-h` / `--help` |
-| 输出到文件 | `-o <FILE>` / `--output <FILE>` |
-| 指定服务源 | `-s <NAME>` / `--service <NAME>` |
-| 显示详细日志 | `-v` / `--verbose` |
-| 跳过 HTML 清洗 | `--no-clean` |
+| 参数 | 说明 | 备注 |
+| --- | --- | --- |
+| `-h`, `--help` | 显示帮助 | 仅打印帮助并退出 |
+| `-o <FILE>`, `--output <FILE>` | 写入输出文件 | 默认写正文；配合 `--json` 时写结构化结果 |
+| `-s <NAME>`, `--service <NAME>` | 强制指定服务源 | 可选值：`jina`、`markdown`、`defuddle` |
+| `--json` | 返回结构化结果 | 适合脚本、自动化和 agent 消费 |
+| `-v`, `--verbose` | 显示详细日志 | 日志输出到 stderr |
+| `--no-clean` | 跳过 basic fallback 的 HTML 清洗 | 只影响 direct/basic fallback 路径 |
 
-`-s` / `--service` 可选值：`jina`、`markdown`、`defuddle`。未知参数直接报错。
+仅支持 `-s` / `--service`；`-Service` 和其他未知参数会直接报错。
+
+## 🧾 输出方式
+
+默认情况下，命令会直接输出抓取到的正文内容，适合在终端中阅读，或通过重定向保存到文件。
+
+如果需要把结果交给脚本、自动化流程或 agent 继续处理，可以加上 `--json`。此时命令会返回结构化结果，例如：
+
+```json
+{"success":true,"url":"https://example.com","content":"...","source":"jina"}
+```
+
+在 `--json` 模式下，失败时也会返回 JSON，并附带错误信息。`source` 会标明实际命中的来源。`--json` 也可以与 `-o` / `--output` 组合使用，此时文件会写入当前模式下的最终输出。
 
 ## 🔄 抓取策略
 
 默认按以下顺序依次尝试，前一个失败才进入下一个；全部失败时以非零状态退出并报告最后一次失败原因。显式指定服务源（`-s` / `--service`）后只尝试该源，失败直接报错。
 
-| # | 服务源 | 方式 | 请求端点 |
+| 优先级 | 服务源 | 方式 | 请求端点 |
 | :---: | --- | :---: | --- |
 | 1 | Jina Reader | GET | `r.jina.ai/<URL>` |
 | 2 | markdown.new | POST | `api.markdown.new/api/v1/convert` |
@@ -135,22 +156,11 @@ Windows CMD / 原生 PowerShell：
 
 仓库中的详细判定规则见 [`spec/fetch-contract.md`](spec/fetch-contract.md)。
 
-## 📁 仓库目录结构
+补充说明：
 
-```text
-smart-web-fetch/
-├── skills/
-│   └── smart-web-fetch/
-│       ├── SKILL.md
-│       ├── assets/
-│       └── scripts/
-├── spec/
-│   ├── fetch-contract.md
-│   └── fixtures/
-├── README.md
-├── README_EN.md
-└── LICENSE
-```
+- 未带 scheme 的 URL 会自动补成 `https://`
+- 仅允许 `http://` / `https://`；如 `ftp://` 会直接失败
+- `basic fallback` 遇到图片、PDF、压缩包等二进制响应会直接失败，不返回乱码文本
 
 ## License
 

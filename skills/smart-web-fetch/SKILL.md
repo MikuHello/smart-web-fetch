@@ -1,12 +1,12 @@
 ---
 name: smart-web-fetch
 description: Fetch web pages and article-like URLs as clean Markdown with automatic fallback across Jina Reader, markdown.new, defuddle.md, and a direct fetch path. Use when an agent needs to read a URL, extract main content, reduce HTML noise, save fetched output, or convert webpage content into token-efficient text.
-compatibility: Requires network access. Bash usage requires curl; if curl is absent, the entry point automatically falls back to PowerShell 7 with Invoke-WebRequest.
+compatibility: Requires network access and Python 3.11+.
 ---
 
 # Smart Web Fetch
 
-Use the bundled scripts to retrieve a URL as clean Markdown or text.
+Use the bundled scripts to retrieve a URL as clean Markdown/text or as structured JSON for scripts and agents.
 
 ## When To Use
 
@@ -17,8 +17,6 @@ Use the bundled scripts to retrieve a URL as clean Markdown or text.
 ## Run
 
 This skill is intended to be distributed as a standalone `smart-web-fetch/` directory or zip. The commands below assume you are running from inside that extracted directory.
-
-所有终端使用相同的参数接口：
 
 ### Bash / Unix-like systems
 
@@ -35,12 +33,13 @@ This skill is intended to be distributed as a standalone `smart-web-fetch/` dire
 ### PowerShell 7（显式调用）
 
 ```powershell
-./scripts/smart-web-fetch.ps1 <URL>
+pwsh -File .\scripts\smart-web-fetch.ps1 <URL>
 ```
 
 ## Preferred options
 
 - Use `-s jina` when you want the most stable cleaned result.
+- Use `--json` when another tool or agent should consume structured output.
 - Use `-o <file>` when the fetched content should be reused later.
 - Use `-v` when debugging a failed fetch.
 - Use `--no-clean` only if you want the basic fallback to keep rawer HTML.
@@ -56,30 +55,20 @@ The tool tries services in this order unless one is explicitly forced:
 
 When a service is explicitly forced via `-s`/`--service`, the CLI only attempts that service. If it fails, the command exits with an error instead of continuing to other services.
 
-The entry point detects `curl` first; if present it routes to the Bash core. Otherwise it falls back to PowerShell 7. When routing to PowerShell, POSIX-style flags (`--no-clean`, `--verbose`, etc.) are translated automatically.
-
 The clean-skip flag only changes the basic fallback path. External service output is passed through unchanged.
 
-The runtime rules file is `assets/fetch-rules.json`. The scripts load it when present and fall back to built-in defaults if it is missing or cannot be parsed.
+Only `-s` / `--service` are supported for service selection; `-Service` is not supported. URLs without a scheme are normalized to `https://`, but non-HTTP(S) schemes fail fast. The basic fallback rejects binary responses instead of returning garbled text.
+
+Default mode prints only the fetched body. `--json` prints a single JSON object with `success`, `url`, `content`, and `source`; failures also include `error` and still exit non-zero. `source` resolves to the actual winning backend: `jina`, `markdown`, `defuddle`, `basic`, or `none`.
 
 ## Requirements
 
-- `curl` **or** PowerShell 7 with `Invoke-WebRequest` (at least one required)
-- Prefer `jq` for JSON parsing (Bash path)
-- Prefer `html2text` or `lynx` for fallback HTML conversion
-- Prefer `perl` for stronger fallback HTML cleanup when available
+- Python 3.11+
+- No third-party runtime dependency; the bundled `core/` package only relies on Python standard-library modules
+- `core/` is internal only; the shipped wrappers execute the skill-root `main.py` bootstrap and keep the public command surface unchanged
 
-## Files
+## Notes
 
-- `scripts/smart-web-fetch`: 统一入口（Bash / Git Bash）。检测运行时并路由到对应 core。
-- `scripts/smart-web-fetch.ps1`: 统一入口（PowerShell 7）。接受 POSIX 风格参数并转发给 core。
-- `scripts/smart-web-fetch.cmd`: 统一入口（Windows CMD / 原生 PowerShell）。调用 PS1 包装器。
-- `scripts/smart-web-fetch-core`: Bash 核心实现。不直接调用。
-- `scripts/smart-web-fetch-core.ps1`: PowerShell 核心实现。不直接调用。
-- `assets/fetch-rules.json`: Runtime thresholds and keyword rules.
-
-## Packaging
-
-- GitHub Actions builds `smart-web-fetch.zip` as the official distributable artifact.
-- The zip root is `smart-web-fetch/` and contains only `SKILL.md`, `assets/`, and `scripts/`.
-- Repository-only files such as `spec/` are not included in the packaged skill.
+- `-o <file>` writes the final output for the current mode, including JSON mode.
+- `--no-clean` only affects the direct/basic fallback path.
+- Unknown arguments or fetch failures exit non-zero.

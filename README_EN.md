@@ -26,56 +26,45 @@ If you cloned the full repository, run `cd skills/smart-web-fetch` first.
 
 ```bash
 chmod +x ./scripts/smart-web-fetch
-chmod +x ./scripts/smart-web-fetch-core
 ```
 
 ### Dependencies
 
-> The Bash core runs in strict mode (`set -euo pipefail`); missing option values and similar edge cases exit explicitly.
-
-| Entry Point | Dependency | Type | Startup Behavior |
-| --- | --- | --- | --- |
-| `scripts/smart-web-fetch` (Bash) | `curl` | Required | Falls back to PowerShell when missing; exits with an error if `pwsh` is also unavailable |
-| `scripts/smart-web-fetch` (Bash) | `jq` | Optional | Warns in verbose mode and falls back to built-in JSON parsing |
-| `scripts/smart-web-fetch` (Bash) | `perl` | Optional | Warns in verbose mode and falls back to awk-based HTML cleanup |
-| `scripts/smart-web-fetch` (Bash) | `html2text` / `lynx` | Optional | Warns when both are missing and returns cleaned HTML instead of plain text |
-| `scripts/smart-web-fetch.ps1` (PowerShell) | PowerShell 7+ | Required | Exits immediately when the runtime version is insufficient |
-| `scripts/smart-web-fetch.ps1` (PowerShell) | `Invoke-WebRequest` | Required | Exits immediately when unavailable |
-| `scripts/smart-web-fetch.ps1` (PowerShell) | `jq` | Optional | Warns in verbose mode and falls back to `ConvertFrom-Json` |
-| `scripts/smart-web-fetch.ps1` (PowerShell) | `perl` | Optional | Warns in verbose mode and falls back to PowerShell regex cleanup |
-| `scripts/smart-web-fetch.ps1` (PowerShell) | `html2text` / `lynx` | Optional | Warns when both are missing and returns cleaned HTML instead of plain text |
+- The only runtime baseline is `Python 3.11+`
+- Only Python standard-library modules are required at runtime
+- `core/` is the internal implementation package; the public wrappers execute the deterministic `main.py` bootstrap in the skill root, which then dispatches to `core.cli:main`
+- `curl`, `pwsh`, `jq`, `perl`, `html2text`, and `lynx` are no longer runtime dependencies
 
 ### Common install commands
 
 #### macOS
 
 ```bash
-brew install jq html2text lynx perl
+brew install python
 ```
 
 #### Debian / Ubuntu
 
 ```bash
-sudo apt-get update && sudo apt-get install -y curl jq html2text lynx perl
+sudo apt-get update && sudo apt-get install -y python3
 ```
 
 #### Fedora / RHEL / CentOS Stream
 
 ```bash
-sudo dnf install -y curl jq html2text lynx perl
+sudo dnf install -y python3
 ```
 
 #### Arch Linux
 
 ```bash
-sudo pacman -S --needed curl jq html2text lynx perl
+sudo pacman -S --needed python
 ```
 
 #### Windows
 
 ```powershell
-winget install Microsoft.PowerShell jqlang.jq StrawberryPerl.StrawberryPerl lynx.portable
-py -m pip install html2text
+winget install Python.Python.3.11
 ```
 
 ## 🚀 Quick Start
@@ -88,21 +77,40 @@ All terminals use the same command name and argument interface. The examples bel
 | Windows CMD / native PowerShell | `.\scripts\smart-web-fetch <URL>` |
 | PowerShell 7 (explicit invocation) | `pwsh -File .\scripts\smart-web-fetch.ps1 <URL>` |
 
-The entry script detects the runtime automatically: it prefers the Bash path when `curl` is available and otherwise falls back to PowerShell 7. On Windows, the `.cmd` wrapper calls the PowerShell entry point.
+### Common usage patterns
 
-### Common examples
+Read the page body directly:
+
+```bash
+./scripts/smart-web-fetch https://example.com
+```
+
+Save the result to a file:
 
 ```bash
 ./scripts/smart-web-fetch https://example.com -o article.md
+```
+
+Return structured JSON:
+
+```bash
+./scripts/smart-web-fetch https://example.com --json
+```
+
+Force a provider or debug the fetch:
+
+```bash
 ./scripts/smart-web-fetch https://example.com -s jina
 ./scripts/smart-web-fetch https://example.com -v
 ./scripts/smart-web-fetch https://example.com --no-clean
 ```
 
-Windows CMD / native PowerShell:
+Windows CMD / native PowerShell examples:
 
 ```cmd
+.\scripts\smart-web-fetch https://example.com
 .\scripts\smart-web-fetch https://example.com -o article.md
+.\scripts\smart-web-fetch https://example.com --json
 .\scripts\smart-web-fetch https://example.com -s jina
 .\scripts\smart-web-fetch https://example.com -v
 .\scripts\smart-web-fetch https://example.com --no-clean
@@ -110,21 +118,34 @@ Windows CMD / native PowerShell:
 
 ## ⚙️ Arguments
 
-| Function | Argument |
-| --- | --- |
-| Show help | `-h` / `--help` |
-| Write output to file | `-o <FILE>` / `--output <FILE>` |
-| Force a service | `-s <NAME>` / `--service <NAME>` |
-| Enable verbose logs | `-v` / `--verbose` |
-| Skip HTML cleanup | `--no-clean` |
+| Argument | Purpose | Notes |
+| --- | --- | --- |
+| `-h`, `--help` | Show help | Prints help and exits |
+| `-o <FILE>`, `--output <FILE>` | Write to an output file | Writes body text by default; writes structured output when combined with `--json` |
+| `-s <NAME>`, `--service <NAME>` | Force a specific service | Valid values: `jina`, `markdown`, `defuddle` |
+| `--json` | Return structured output | Useful for scripts, automation, and agents |
+| `-v`, `--verbose` | Enable verbose logs | Logs go to stderr |
+| `--no-clean` | Skip HTML cleanup in the basic fallback | Only affects the direct/basic fallback path |
 
-Valid values for `-s` / `--service`: `jina`, `markdown`, `defuddle`. Unknown arguments exit with an error.
+Only `-s` / `--service` are supported; `-Service` and other unknown arguments exit with an error.
+
+## 🧾 Output Modes
+
+By default, the command prints the fetched body content directly, which is convenient for terminal use or shell redirection.
+
+If the result should be consumed by scripts, automation, or agents, add `--json`. In that mode the CLI returns structured output, for example:
+
+```json
+{"success":true,"url":"https://example.com","content":"...","source":"jina"}
+```
+
+In `--json` mode, failures also return JSON and include error details. `source` reflects the backend that actually produced the result. `--json` can also be combined with `-o` / `--output`, in which case the output file receives the final payload for the active mode.
 
 ## 🔄 Fetch Strategy
 
 By default, services are tried in order. The next provider is only attempted if the previous one fails. If all providers fail, the command exits with a non-zero status and reports the last failure reason. When a service is explicitly selected with `-s` / `--service`, only that service is attempted.
 
-| # | Service | Method | Endpoint |
+| Priority | Service | Method | Endpoint |
 | :---: | --- | :---: | --- |
 | 1 | Jina Reader | GET | `r.jina.ai/<URL>` |
 | 2 | markdown.new | POST | `api.markdown.new/api/v1/convert` |
@@ -133,22 +154,11 @@ By default, services are tried in order. The next provider is only attempted if 
 
 See [`spec/fetch-contract.md`](./spec/fetch-contract.md) in the repository for the detailed decision contract.
 
-## 📁 Repository Layout
+Additional notes:
 
-```text
-smart-web-fetch/
-├── skills/
-│   └── smart-web-fetch/
-│       ├── SKILL.md
-│       ├── assets/
-│       └── scripts/
-├── spec/
-│   ├── fetch-contract.md
-│   └── fixtures/
-├── README.md
-├── README_EN.md
-└── LICENSE
-```
+- URLs without a scheme are normalized to `https://`
+- Only `http://` and `https://` are allowed; schemes such as `ftp://` fail fast
+- The basic fallback rejects binary responses such as images, PDFs, and archive payloads instead of returning garbled text
 
 ## License
 

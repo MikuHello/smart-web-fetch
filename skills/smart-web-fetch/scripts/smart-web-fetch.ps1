@@ -1,115 +1,75 @@
-#Requires -Version 7
-# smart-web-fetch.ps1 — unified PowerShell entry point
-# Accepts both POSIX-style (--no-clean, --verbose) and native PowerShell names,
-# then forwards to smart-web-fetch-core.ps1 via splatting.
+$ErrorActionPreference = 'Stop'
 
-param(
-    [Parameter(Position = 0)]
-    [string]$Url,
+$SkillDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$BootstrapPath = Join-Path $SkillDir 'main.py'
+$ScriptArgs = $args
+$VersionCheck = 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'
+$ErrorMessage = "smart-web-fetch: error: Python 3.11+ was not found. Install Python 3.11 or newer and ensure a compatible interpreter is on PATH."
 
-    [Alias('o')]
-    [string]$Output,
-
-    [Alias('s')]
-    [string]$Service,
-
-    [Alias('v')]
-    [switch]$VerboseMode,
-
-    [Alias('h')]
-    [switch]$Help,
-
-    # Accept POSIX-style --no-clean in addition to -NoClean
-    [switch]$NoClean,
-
-    # Catch any remaining arguments so we can handle POSIX-style long options
-    [Parameter(ValueFromRemainingArguments)]
-    [string[]]$ExtraArgs
-)
-
-# Handle POSIX-style long options that PowerShell leaves in $ExtraArgs.
-# Supported:
-#   --no-clean
-#   --verbose
-#   --help
-#   --output <file> / --output=<file>
-#   --service <name> / --service=<name>
-if ($ExtraArgs) {
-    for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
-        $a = $ExtraArgs[$i]
-
-        if ($a -notmatch '^-') {
-            if ([string]::IsNullOrWhiteSpace($Url)) {
-                $Url = $a
-                continue
-            }
-
-            Write-Error "smart-web-fetch: unexpected extra argument: $a"
-            exit 1
+function Get-PyLauncherSelector {
+    try {
+        $installed = & py -0p 2>$null | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return $null
         }
+    } catch {
+        return $null
+    }
 
-        switch -Regex ($a) {
-            '^--no-clean$' {
-                $NoClean = $true
-                continue
-            }
-            '^--verbose$' {
-                $VerboseMode = $true
-                continue
-            }
-            '^--help$|^-h$' {
-                $Help = $true
-                continue
-            }
-            '^--output=(.+)$' {
-                $Output = $Matches[1]
-                continue
-            }
-            '^--service=(.+)$' {
-                $Service = $Matches[1]
-                continue
-            }
-            '^--output$' {
-                if ($i + 1 -ge $ExtraArgs.Count) {
-                    Write-Error 'smart-web-fetch: missing value for --output'
-                    exit 1
-                }
-                $i++
-                if ($ExtraArgs[$i] -match '^-') {
-                    Write-Error 'smart-web-fetch: missing value for --output'
-                    exit 1
-                }
-                $Output = $ExtraArgs[$i]
-                continue
-            }
-            '^--service$' {
-                if ($i + 1 -ge $ExtraArgs.Count) {
-                    Write-Error 'smart-web-fetch: missing value for --service'
-                    exit 1
-                }
-                $i++
-                if ($ExtraArgs[$i] -match '^-') {
-                    Write-Error 'smart-web-fetch: missing value for --service'
-                    exit 1
-                }
-                $Service = $ExtraArgs[$i]
-                continue
-            }
-            default {
-                Write-Error "smart-web-fetch: unknown argument: $a"
-                exit 1
-            }
+    $bestMajor = -1
+    $bestMinor = -1
+    $bestSelector = $null
+
+    foreach ($match in [regex]::Matches($installed, '-V:(?<major>\d+)\.(?<minor>\d+)')) {
+        $major = [int]$match.Groups['major'].Value
+        $minor = [int]$match.Groups['minor'].Value
+        if ($major -lt 3 -or ($major -eq 3 -and $minor -lt 11)) {
+            continue
         }
+        if ($major -gt $bestMajor -or ($major -eq $bestMajor -and $minor -gt $bestMinor)) {
+            $bestMajor = $major
+            $bestMinor = $minor
+            $bestSelector = "$major.$minor"
+        }
+    }
+
+    return $bestSelector
+}
+
+function Test-PythonCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Command,
+        [string[]]$PrefixArgs = @()
+    )
+
+    try {
+        & $Command @PrefixArgs -c $VersionCheck *> $null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
     }
 }
 
-$splatArgs = @{}
-if ($Url)         { $splatArgs['Url']         = $Url }
-if ($Output)      { $splatArgs['Output']      = $Output }
-if ($Service)     { $splatArgs['Service']     = $Service }
-if ($VerboseMode) { $splatArgs['VerboseMode'] = $true }
-if ($Help)        { $splatArgs['Help']        = $true }
-if ($NoClean)     { $splatArgs['NoClean']     = $true }
+function Invoke-Bootstrap {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Command,
+        [string[]]$PrefixArgs = @()
+    )
 
-& "$PSScriptRoot/smart-web-fetch-core.ps1" @splatArgs
-exit $LASTEXITCODE
+    & $Command @PrefixArgs $BootstrapPath @ScriptArgs
+}
+
+if ($PySelector = Get-PyLauncherSelector) {
+    Invoke-Bootstrap -Command 'py' -PrefixArgs @("-$PySelector")
+    exit $LASTEXITCODE
+}
+
+if (Test-PythonCommand -Command 'python') {
+    Invoke-Bootstrap -Command 'python'
+    exit $LASTEXITCODE
+}
+
+[Console]::Error.WriteLine($ErrorMessage)
+exit 1
