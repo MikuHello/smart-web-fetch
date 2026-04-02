@@ -1,0 +1,51 @@
+name: Validate Smart Web Fetch
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  offline-regression:
+    name: Offline Regression (Ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run offline regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash spec/tests/offline-regression.sh
+
+      - name: Run Bash JSON smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash spec/tests/json-smoke.sh
+
+  powershell-smoke:
+    name: PowerShell Smoke Tests (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run PowerShell JSON smoke tests
+        shell: pwsh
+        run: |
+          .\spec\tests\json-smoke.ps1
