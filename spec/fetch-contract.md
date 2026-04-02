@@ -15,7 +15,7 @@
 | 3 | `defuddle` | POST | `defuddle.md/api/convert` |
 | 4 | `basic fallback` | GET | 原始 URL，本地 HTML 清洗 |
 
-显式指定服务源（`-s` / `--service`）时，仅尝试该源；失败直接报错，不继续降级。`-Service` 不受支持，应按未知参数报错。
+显式指定服务源（`-s` / `--service`）时，仅尝试该源；失败直接报错，不继续降级。
 
 ## 3. URL 归一化
 

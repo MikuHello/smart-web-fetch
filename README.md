@@ -35,7 +35,7 @@ chmod +x ./scripts/smart-web-fetch
 - 统一运行时基线为 `Python 3.11+`
 - 默认只依赖 Python 标准库
 - `core/` 是内部实现包；对外包装器会执行技能根目录下确定的 `main.py` bootstrap，再由它引导 `core.cli:main`
-- 不再依赖 `curl` / `pwsh` / `jq` / `perl` / `html2text` / `lynx`
+- 运行时无需 `curl` / `pwsh` / `jq` / `perl` / `html2text` / `lynx`
 
 ### 常见安装命令
 
@@ -128,8 +128,6 @@ Windows CMD / 原生 PowerShell 示例：
 | `--json` | 返回结构化结果 | 适合脚本、自动化和 agent 消费 |
 | `-v`, `--verbose` | 显示详细日志 | 日志输出到 stderr |
 | `--no-clean` | 跳过 basic fallback 的 HTML 清洗 | 只影响 direct/basic fallback 路径 |
-
-仅支持 `-s` / `--service`；`-Service` 和其他未知参数会直接报错。
 
 ## 🧾 输出方式
 

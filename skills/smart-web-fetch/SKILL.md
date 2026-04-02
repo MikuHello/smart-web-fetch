@@ -57,7 +57,7 @@ When a service is explicitly forced via `-s`/`--service`, the CLI only attempts 
 
 The clean-skip flag only changes the basic fallback path. External service output is passed through unchanged.
 
-Only `-s` / `--service` are supported for service selection; `-Service` is not supported. URLs without a scheme are normalized to `https://`, but non-HTTP(S) schemes fail fast. The basic fallback rejects binary responses instead of returning garbled text.
+URLs without a scheme are normalized to `https://`, but non-HTTP(S) schemes fail fast. The basic fallback rejects binary responses instead of returning garbled text.
 
 Default mode prints only the fetched body. `--json` prints a single JSON object with `success`, `url`, `content`, and `source`; failures also include `error` and still exit non-zero. `source` resolves to the actual winning backend: `jina`, `markdown`, `defuddle`, `basic`, or `none`.
 

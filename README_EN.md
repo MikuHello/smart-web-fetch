@@ -32,8 +32,8 @@ chmod +x ./scripts/smart-web-fetch
 
 - The only runtime baseline is `Python 3.11+`
 - Only Python standard-library modules are required at runtime
-- `core/` is the internal implementation package; the public wrappers execute the deterministic `main.py` bootstrap in the skill root, which then dispatches to `core.cli:main`
-- `curl`, `pwsh`, `jq`, `perl`, `html2text`, and `lynx` are no longer runtime dependencies
+- `core/` is the internal implementation package; the public wrappers execute the deterministic `main.py` bootstrap in the skill root, which then dispatch to `core.cli:main`
+- Runtime does not require `curl`, `pwsh`, `jq`, `perl`, `html2text`, or `lynx`
 
 ### Common install commands
 
@@ -126,8 +126,6 @@ Windows CMD / native PowerShell examples:
 | `--json` | Return structured output | Useful for scripts, automation, and agents |
 | `-v`, `--verbose` | Enable verbose logs | Logs go to stderr |
 | `--no-clean` | Skip HTML cleanup in the basic fallback | Only affects the direct/basic fallback path |
-
-Only `-s` / `--service` are supported; `-Service` and other unknown arguments exit with an error.
 
 ## 🧾 Output Modes
 

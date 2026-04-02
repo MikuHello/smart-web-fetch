@@ -1,13 +1,13 @@
 # 包装器运行时说明
 
-本文档只面向维护者，记录 `smart-web-fetch` 三个入口包装器的运行时发现逻辑、职责边界与测试基线。
+本文档只面向维护者，记录 `smart-web-fetch` 三个入口包装器的运行时发现逻辑、职责边界与测试基线。长期文档的写法边界见 `spec/documentation-style.md`。
 
 ## 1. 总体结构
 
 - `skills/smart-web-fetch/main.py` 是唯一受支持的 Python bootstrap 文件。
 - `skills/smart-web-fetch/core/` 是内部实现包。
 - `smart-web-fetch`、`smart-web-fetch.ps1`、`smart-web-fetch.cmd` 都是薄启动器。
-- `scripts/` 目录只保留平台入口，不再承载业务实现。
+- `scripts/` 目录只保留平台入口，业务实现位于 `main.py` 与 `core/`。
 - 包装器的目标只有两件事：
   - 找到可用的 Python 入口
   - 将原始 CLI 参数原样转发给确定文件入口 `main.py`
@@ -164,10 +164,9 @@
 当前覆盖：
 
 - `spec/fetch-contract.md`、规则文件、`main.py`、Python core 包、fixture 是否存在
-- 已移除旧的 shell / PowerShell core 文件
 - Bash 包装器语法检查
 - Python core 包导入、语法检查与部分内置函数行为校验
-- 仓库内不应再残留旧的模块名启动 contract 引用
+- 仓库文档与包装器结构应符合当前入口约定
 
 说明：
 
